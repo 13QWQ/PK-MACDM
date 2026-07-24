@@ -1,0 +1,192 @@
+/* ================================================================
+   Element Plus 主题覆盖 + 全局设计系统变量 + 模板样式
+   参考：前端开发计划 第三章 设计系统
+   ================================================================ */
+
+/* ---- Element Plus CSS 变量覆盖 ---- */
+:root {
+  --el-color-primary: #2563eb;
+  --el-color-primary-hover: #1d4ed8;
+  --el-color-primary-light-3: #eef2ff;
+  --el-color-primary-light-5: #eef2ff;
+  --el-color-primary-light-7: #eef2ff;
+  --el-color-primary-light-8: #f5f7fa;
+  --el-color-primary-light-9: #f5f7fa;
+  --el-color-success: #16a34a;
+  --el-border-radius-base: 6px;
+  --el-border-radius-round: 16px;
+  --el-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* 共享设计 token */
+  --hero-gradient: linear-gradient(180deg, #eef2ff 0%, #f5f7fa 100%);
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-text-title: #111827;
+  --color-text-body: #666;
+  --color-border: #d0d5dd;
+  --color-bg-page: #f5f7fa;
+}
+
+/* ---- 全局重置 ---- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f5f7fa;
+  color: #333;
+}
+
+/* ---- CSS 头像（纯 CSS 绘制，黑底白色人物剪影） ---- */
+.nav-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #000;
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.nav-avatar::before {
+  /* 头部（白色圆） */
+  content: '';
+  position: absolute;
+  width: 36%;
+  height: 36%;
+  background: #fff;
+  border-radius: 50%;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nav-avatar::after {
+  /* 身体（白色半椭圆） */
+  content: '';
+  position: absolute;
+  width: 80%;
+  height: 50%;
+  background: #fff;
+  border-radius: 50% 50% 0 0 / 60% 60% 0 0;
+  bottom: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nav-avatar-large {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: #000;
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+}
+
+.nav-avatar-large::before {
+  content: '';
+  position: absolute;
+  width: 36%;
+  height: 36%;
+  background: #fff;
+  border-radius: 50%;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nav-avatar-large::after {
+  content: '';
+  position: absolute;
+  width: 80%;
+  height: 50%;
+  background: #fff;
+  border-radius: 50% 50% 0 0 / 60% 60% 0 0;
+  bottom: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* ---- 共享按钮样式 ---- */
+.app-btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.3s;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+}
+
+.app-btn-outline {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #333;
+}
+
+.app-btn-outline:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.app-btn-primary {
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid #2563eb;
+}
+
+.app-btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.app-btn-large {
+  padding: 14px 32px;
+  font-size: 16px;
+  border-radius: 8px;
+}
+
+.app-btn-submit {
+  padding: 14px 48px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.3s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+}
+
+.app-btn-submit:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.app-btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- 共享 loading 动画 ---- */
+@keyframes app-spin {
+  to { transform: rotate(360deg); }
+}
+
+.app-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: app-spin 0.6s linear infinite;
+}
