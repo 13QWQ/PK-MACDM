@@ -1,0 +1,32 @@
+# 依赖
+node_modules/
+
+# Python 编译缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 环境变量
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# MCP 工具生成物
+.playwright-mcp/
+
+# Claude Code 内部文件
+.claude/
+
+# 个人笔记 / 实验文件
+*要找什么.txt
+前端需求.txt
+demo-home.html
+template-home.html
+方案二CSS头像预览.html
