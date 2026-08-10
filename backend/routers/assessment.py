@@ -47,6 +47,7 @@ class AssessmentResponse(BaseModel):
     user_input: str | None = None
     overall_mastery: float | None = None
     ability_vector: list[DimensionItem] | None = None
+    ability_matrix: list | None = None
     knowledge_gaps: list | None = None
     confidence: float | None = None
     created_at: datetime
@@ -55,6 +56,7 @@ class AssessmentResponse(BaseModel):
 class DiagnosisResponse(BaseModel):
     overall_mastery: float
     ability_vector: list[DimensionItem]
+    ability_matrix: list
     knowledge_gaps: list
     confidence: float
 
@@ -138,17 +140,21 @@ def submit_assessment(
     # 更新评估结果
     assessment.overall_mastery = diagnosis["overall_mastery"]
     assessment.ability_vector = diagnosis["ability_vector"]
+    assessment.ability_matrix = diagnosis.get("ability_matrix", [])
     assessment.knowledge_gaps = diagnosis["knowledge_gaps"]
     assessment.confidence = diagnosis["confidence"]
 
     # 根据薄弱知识点自动生成学习资源
     resource_types = ["讲义", "练习"]
-    for gap in diagnosis["knowledge_gaps"]:
+    generated_resources = []
+    for i, gap in enumerate(diagnosis["knowledge_gaps"]):
+        gap_id = f"gap_{i+1:03d}"
         for rtype in resource_types:
             generated = agent_adapter.generate_resource(
                 knowledge_point=gap,
                 user_level=diagnosis["overall_mastery"],
                 resource_type=rtype,
+                gap_id=gap_id,
             )
             resource = Resource(
                 knowledge_point=gap,
@@ -158,6 +164,17 @@ def submit_assessment(
                 difficulty=generated.get("difficulty"),
             )
             db.add(resource)
+            generated_resources.append({
+                "resource_id": resource.id,
+                "title": generated["title"],
+                "body": generated["body"],
+                "gap_id": generated.get("gap_id", gap_id),
+                "source_chunk_id": generated.get("source_chunk_id", ""),
+            })
+
+    # 内容审核（Mock 阶段直接通过，队友审核Agent就绪后替换）
+    package_id = f"pkg_{assessment.id}"
+    review_result = agent_adapter.review_resources(package_id, generated_resources)
 
     # 根据诊断结果自动生成学习路径
     raw_vector = [item["value"] for item in diagnosis["ability_vector"]]
@@ -221,6 +238,7 @@ def get_diagnosis(
     return {
         "overall_mastery": float(assessment.overall_mastery),
         "ability_vector": assessment.ability_vector,
+        "ability_matrix": assessment.ability_matrix or [],
         "knowledge_gaps": assessment.knowledge_gaps,
         "confidence": float(assessment.confidence),
     }

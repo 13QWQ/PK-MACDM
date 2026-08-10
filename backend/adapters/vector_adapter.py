@@ -1,12 +1,12 @@
 """
 向量库接口适配层
 队友接口格式（ChromaDB + Ollama） -> 我的格式
+
+依赖 ollama、chromadb，仅在调用检索函数时按需导入，
+未安装时后端其余功能不受影响，搜索接口返回空列表。
 """
 
 import os
-
-import ollama
-import chromadb
 
 # ─── 岗位 → (ChromaDB目录, 集合名) 映射 ──────────────────
 # 队友每建好一个新岗位的向量库后，把目录和集合名加一行即可
@@ -20,10 +20,27 @@ JOB_COLLECTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 # 按 DB 目录缓存 ChromaDB 客户端（同目录复用）
-_clients: dict[str, chromadb.PersistentClient] = {}
+_clients: dict = {}
+_imports_checked: bool = False
 
 
-def _get_client(db_dir: str) -> chromadb.PersistentClient:
+def _ensure_imports() -> bool:
+    """按需导入 ollama / chromadb，未安装返回 False"""
+    global _imports_checked, ollama, chromadb
+    if _imports_checked:
+        return True
+    try:
+        import ollama as _ollama
+        import chromadb as _chromadb
+        ollama = _ollama
+        chromadb = _chromadb
+        _imports_checked = True
+        return True
+    except ImportError:
+        return False
+
+
+def _get_client(db_dir: str):
     """获取或创建 ChromaDB 客户端（按目录缓存）"""
     if db_dir not in _clients:
         _clients[db_dir] = chromadb.PersistentClient(
@@ -59,8 +76,11 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
             }
         ]
 
-    如果岗位未配置向量库或检索失败，返回空列表。
+    如果 ollama/chromadb 未安装、Ollama 服务未启动、或岗位未配置向量库，返回空列表。
     """
+    if not _ensure_imports():
+        return []
+
     collection = _get_collection(job)
     if not collection:
         return []

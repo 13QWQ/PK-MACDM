@@ -1,6 +1,8 @@
 """
 知识图谱接口适配层
 队友接口格式 -> 我的格式
+
+注意：知识图谱已从项目计划中移除（2026-07-27），此文件保留备用，未被任何 router 引用。
 """
 
 from adapters.mock_data import MOCK_KNOWLEDGE_RELATIONS, MOCK_JOB_SKILLS
