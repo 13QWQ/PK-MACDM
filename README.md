@@ -13,7 +13,7 @@
 | 后端 | Python（FastAPI） |
 | 数据库 | SQLite（开发）/ MySQL（生产） |
 | 向量库 | ChromaDB + Ollama（nomic-embed-text） |
-| AI 推理 | Qwen2.5 + 多 Agent 协同 |
+| AI 推理 | 多 Agent 协同（纯 Python 确定性逻辑，6 个串行 Agent） |
 | 前端 | Vue 3 + Element Plus |
 
 ## 快速启动
@@ -53,8 +53,9 @@ npm run dev
 │   ├── models/              # ORM 模型
 │   ├── routers/             # API 路由
 │   ├── adapters/            # 适配层（隔离队友接口变动）
-│   │   ├── agent_adapter.py     # AI 诊断接口适配
-│   │   ├── graph_adapter.py     # 知识图谱接口适配
+│   │   ├── agent_adapter.py     # Agent 对外接口（3 个核心函数）
+│   │   ├── agent_runtime.py     # Agent 运行时（6 个串行 Agent）
+│   │   ├── graph_adapter.py     # 知识图谱接口适配（已弃用）
 │   │   ├── vector_adapter.py    # 向量检索接口适配
 │   │   └── mock_data.py         # Mock 数据
 │   ├── my_vector_db/        # 向量库 - 产品经理
@@ -82,24 +83,22 @@ npm run dev
 | 前端（Vue 3） | ✅ 已完成 |
 | 前后端联调 | ✅ 已完成 |
 | RAG 检索 | ✅ 已接入（4 岗位向量库） |
-| AI 诊断 | 🚧 Mock 数据，待队友 Agent 接口 |
-| AI 资源生成 | 🚧 Mock 数据，待队友 Agent 接口 |
-| AI 路径规划 | 🚧 Mock 数据，待队友 Agent 接口 |
-| 防幻觉层 | ⬜ 未开始 |
+| AI Agent（6 个串行） | ✅ 已接入（纯 Python，不依赖外部模型 API） |
+| 防幻觉层 | 🚧 Mock（审核纠偏函数预留，待 source_chunk_id 字段补齐后接入） |
 
-> AI 诊断、资源生成、路径规划当前均使用 Mock 数据返回，数据结构与真实接口一致。队友 Agent 接口就绪后，只需修改 `adapters/agent_adapter.py` 中的 3 处 TODO 即可切换。
+> Agent 无需外部模型 API 即可运行。关闭 Ollama 时，诊断仍正常输出，资源生成会提示无知识库来源而非伪造内容。
 
 ## 队友接口说明
 
 队友需提供的接口（详细定义见 `开发计划.md` 第四部分）：
 
-| 优先级 | 接口 | 功能 | 状态 |
-|--------|------|------|------|
-| Demo 必需 | 向量检索 | ChromaDB + Ollama 文档检索 | ✅ 已接入 |
-| 核心 | 能力诊断 | 分析用户能力，输出知识薄弱点 | 🚧 Mock |
-| 核心 | 学习资源生成 | 根据知识点生成学习内容 | 🚧 Mock |
-| 核心 | 学习路径规划 | 生成个性化学习路径 | 🚧 Mock |
-| 重要 | 相似案例检索 | 检索相似用户案例 | ⬜ 未开始 |
+| 接口 | 功能 | 状态 |
+|------|------|------|
+| 向量检索 | ChromaDB + Ollama 文档检索 | ✅ 已接入 |
+| 能力诊断 | 多 Agent 分析，输出能力向量 + 知识缺口 | ✅ 已接入 |
+| 学习资源生成 | 基于知识库片段组装资源内容 | ✅ 已接入 |
+| 学习路径规划 | 按能力排序生成学习步骤 | ✅ 已接入 |
+| 内容审核纠偏 | 校验资源来源，无来源则阻断 | 🚧 Mock（待字段补齐） |
 
 ### RAG 向量检索（已接入）
 
@@ -122,6 +121,18 @@ GET /api/resource/search?q=需求分析&job=产品经理&top_k=5
 
 后端 `adapters/vector_adapter.py` 中的 `JOB_COLLECTION_MAP` 负责岗位名 → 目录/集合的路由。加新岗位只需在映射表加一行。
 
-### AI Agent 接口（待队友提供）
+### AI Agent（已接入）
 
-队友 Agent 接口就绪后，只需修改 `adapters/agent_adapter.py` 中 3 个函数的 TODO 部分即可接入真实 AI，适配层会自动将队友的接口格式转换为业务代码的统一格式。
+`agent_runtime.py` 包含 6 个串行 Agent，覆盖四个岗位（前端、后端、运维、产品经理），不依赖外部模型 API：
+
+```
+用户自由文本
+  → 自由文本学情解析 Agent（关键词匹配 + 否定表述识别）
+  → 岗位知识库检索 Agent（调 ChromaDB 检索相关片段）
+  → 岗位能力诊断 Agent（生成 16 维能力向量 + 知识缺口）
+  → 诊断结果校正 Agent（校验字段、数值范围、文本充分度）
+  → 个性化资源生成 Agent（基于检索片段组装内容，无来源则阻断）
+  → 个性化学习路径 Agent（按能力排序生成学习步骤）
+```
+
+所有 Agent 输出通过 `agent_adapter.py` 的三个函数（`diagnose` / `generate_resource` / `plan_learning_path`）暴露，前端接口无变化。
