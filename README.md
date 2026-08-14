@@ -28,9 +28,11 @@ cd backend
 pip install -r requirements.txt
 ```
 
+> 依赖里 `FlagEmbedding` 会连带安装 PyTorch（体积较大）。国内直连慢，建议加镜像源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+
 ### 2. LLM 配置（重要）
 
-编辑 `backend/llm_config.json`，填入你的 API Key：
+编辑 `backend/llm_config.json`，在 `api_key` 字段填入你的 API Key：
 
 ```json
 {
@@ -47,11 +49,16 @@ pip install -r requirements.txt
 
 支持任意 OpenAI 兼容的 API（OpenAI、阿里百炼、本地 vLLM 等），只需改这三个字段即可切换。
 
-### 3. 向量库（已内置）
+> 同一个 Key 同时用于主推理与防幻觉校验（见第 4 节），无需额外配置。
 
-知识库文件已打包在项目中（`backend/qdrant_storage/` + `backend/bge-m3/`），有 2,269 条岗位知识片段，覆盖四个岗位。**无需额外下载。**
+### 3. 向量库与嵌入模型（需自行获取）
 
-> BGE-M3 模型约 2.2GB，**首次启动诊断时需要加载，约 20~40 秒**（视机器配置）。加载后常驻内存，后续请求秒级响应。
+以下两部分**不随仓库分发**，需自行准备后放到 `backend/` 下：
+
+- **BGE-M3 嵌入模型**（约 2.2GB）：从 HuggingFace 下载 `BAAI/bge-m3`，把整个模型目录放到 `backend/bge-m3/`。国内可设镜像 `HF_ENDPOINT=https://hf-mirror.com` 加速。
+- **qdrant_storage 向量库**（2,269 条岗位知识片段）：由 RAG 队友构建，本仓库不含构建脚本，向队友获取后放到 `backend/qdrant_storage/`。
+
+> 缺少模型或向量库时后端不会崩溃，但向量检索会返回空、资源生成退化为模板内容；补全后即恢复完整效果。BGE-M3 首次加载约 20~40 秒，加载后常驻内存。
 
 ### 4. 防幻觉校验（无需单独部署）
 
@@ -99,8 +106,8 @@ npm run dev
 │   ├── requirements.txt        # Python 依赖
 │   ├── llm_config.json         # ★ LLM 配置（API Key、模型地址）
 │   ├── capability_diagnosis.db # SQLite 数据库
-│   ├── bge-m3/                 # BGE-M3 嵌入模型（2.2GB）
-│   ├── qdrant_storage/         # Qdrant 向量知识库（2,269 条）
+│   ├── bge-m3/                 # ★ BGE-M3 嵌入模型（需自行下载，不随仓库分发）
+│   ├── qdrant_storage/         # ★ Qdrant 向量知识库（需从队友获取，不随仓库分发）
 │   ├── models/                 # ORM 模型
 │   ├── routers/                # API 路由
 │   ├── adapters/               # 适配层
@@ -179,4 +186,4 @@ pip install -r requirements.txt
 
 ### 向量检索返回空
 
-`backend/qdrant_storage/` 或 `backend/bge-m3/` 目录缺失或损坏，需要从队友处获取最新知识库文件。
+`backend/qdrant_storage/` 或 `backend/bge-m3/` 目录缺失，按第 3 节「向量库与嵌入模型」自行放置；或从队友处获取最新知识库文件。
