@@ -1,0 +1,30 @@
+[
+  {
+    "career_id": "java_backend_engineer",
+    "output_chunks_count": 1149,
+    "ready_for_reembedding_count": 1149,
+    "pending_requirement_mapping_count": 0,
+    "max_chunk_char_count": 385
+  },
+  {
+    "career_id": "frontend_engineer",
+    "output_chunks_count": 998,
+    "ready_for_reembedding_count": 518,
+    "pending_requirement_mapping_count": 480,
+    "max_chunk_char_count": 285
+  },
+  {
+    "career_id": "operations_engineer",
+    "output_chunks_count": 1045,
+    "ready_for_reembedding_count": 588,
+    "pending_requirement_mapping_count": 457,
+    "max_chunk_char_count": 415
+  },
+  {
+    "career_id": "product_manager",
+    "output_chunks_count": 33,
+    "ready_for_reembedding_count": 14,
+    "pending_requirement_mapping_count": 19,
+    "max_chunk_char_count": 260
+  }
+]
