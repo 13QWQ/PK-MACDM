@@ -10,11 +10,61 @@
 
 | 部分 | 选型 |
 |------|------|
-| 后端 | Python（FastAPI） |
-| 数据库 | SQLite（开发）/ MySQL（生产） |
-| 向量库 | ChromaDB + Ollama（nomic-embed-text） |
-| AI 推理 | 多 Agent 协同（纯 Python 确定性逻辑，6 个串行 Agent） |
+| 后端 | Python 3.10+（FastAPI） |
+| 数据库 | SQLite |
+| 向量库 | Qdrant（本地文件模式）+ BGE-M3 嵌入模型 |
+| AI 推理 | DeepSeek API（7 个串行 Agent，无 API 时自动降级为规则引擎） |
+| 防幻觉 | DeepSeek API（复用 LLM 配置，比对知识库原文，无需额外部署） |
 | 前端 | Vue 3 + Element Plus |
+
+## 环境准备
+
+### 1. Python 环境
+
+需要 Python 3.10 或以上版本。
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### 2. LLM 配置（重要）
+
+编辑 `backend/llm_config.json`，填入你的 API Key：
+
+```json
+{
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-flash",
+  "api_key": "sk-你的key",
+  "temperature": 0.7
+}
+```
+
+> **获取 DeepSeek API Key：** 访问 [platform.deepseek.com](https://platform.deepseek.com) 注册并充值（最低充值 ¥1），在 API Keys 页面创建 Key。
+>
+> **不填 Key 也能用：** 系统会自动降级为规则引擎模式，输出模板化内容。接上 LLM 后内容质量会大幅提升。
+
+支持任意 OpenAI 兼容的 API（OpenAI、阿里百炼、本地 vLLM 等），只需改这三个字段即可切换。
+
+### 3. 向量库（已内置）
+
+知识库文件已打包在项目中（`backend/qdrant_storage/` + `backend/bge-m3/`），有 2,269 条岗位知识片段，覆盖四个岗位。**无需额外下载。**
+
+> BGE-M3 模型约 2.2GB，**首次启动诊断时需要加载，约 20~40 秒**（视机器配置）。加载后常驻内存，后续请求秒级响应。
+
+### 4. 防幻觉校验（无需单独部署）
+
+防幻觉校验复用 `backend/llm_config.json` 里的 DeepSeek API（与主推理同一个 Key），比对生成内容与知识库原文、判断是否编造。第 2 步配置好 LLM 后即自动可用，无需安装本地模型。
+
+### 5. Node.js 环境
+
+需要 Node.js 18 或以上版本。
+
+```bash
+cd frontend
+npm install
+```
 
 ## 快速启动
 
@@ -22,117 +72,111 @@
 
 ```bash
 cd backend
-pip install -r requirements.txt
 python main.py
 ```
 
-后端启动后访问 `http://localhost:8000/docs` 查看 API 文档。
-
-> **注意：** 向量检索功能需要本地运行 Ollama 服务并拉取 `nomic-embed-text` 模型，否则搜索接口返回空结果。其余接口不受影响。
+启动后访问 `http://localhost:8000/docs` 查看 API 文档。
 
 ### 前端
 
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-前端启动后访问 `http://localhost:5173`。
+启动后访问 `http://localhost:5173`，登录后即可使用。
+
+> 默认注册的第一个账号即为可用账号，直接用任一用户名+密码注册即可。
 
 ## 项目结构
 
 ```
 ├── backend/
-│   ├── main.py              # FastAPI 入口
-│   ├── config.py            # 配置
-│   ├── database.py          # 数据库连接
-│   ├── dimensions.py        # 能力维度定义
-│   ├── requirements.txt     # Python 依赖
-│   ├── capability_diagnosis.db  # SQLite 数据库
-│   ├── models/              # ORM 模型
-│   ├── routers/             # API 路由
-│   ├── adapters/            # 适配层（隔离队友接口变动）
-│   │   ├── agent_adapter.py     # Agent 对外接口（3 个核心函数）
-│   │   ├── agent_runtime.py     # Agent 运行时（6 个串行 Agent）
-│   │   ├── graph_adapter.py     # 知识图谱接口适配（已弃用）
-│   │   ├── vector_adapter.py    # 向量检索接口适配
-│   │   └── mock_data.py         # Mock 数据
-│   ├── my_vector_db/        # 向量库 - 产品经理
-│   ├── db_frontend/         # 向量库 - 前端开发
-│   ├── db_backend/          # 向量库 - 后端开发
-│   └── db_ops/              # 向量库 - 运维
+│   ├── main.py                 # FastAPI 入口
+│   ├── config.py               # 配置
+│   ├── database.py             # 数据库连接
+│   ├── dimensions.py           # 能力维度定义
+│   ├── requirements.txt        # Python 依赖
+│   ├── llm_config.json         # ★ LLM 配置（API Key、模型地址）
+│   ├── capability_diagnosis.db # SQLite 数据库
+│   ├── bge-m3/                 # BGE-M3 嵌入模型（2.2GB）
+│   ├── qdrant_storage/         # Qdrant 向量知识库（2,269 条）
+│   ├── models/                 # ORM 模型
+│   ├── routers/                # API 路由
+│   ├── adapters/               # 适配层
+│   │   ├── agent_adapter.py    # Agent 对外接口
+│   │   ├── agent_runtime.py    # Agent 运行时（7 个串行 Agent）
+│   │   ├── llm_client.py       # LLM 客户端（OpenAI 兼容）
+│   │   ├── vector_adapter.py   # 向量检索适配（Qdrant + BGE-M3）
+│   │   └── guardrail.py        # 防幻觉校验（比对知识库原文）
+│   └── tests/                  # 测试脚本
 │
 ├── frontend/
 │   └── src/
-│       ├── api/              # 后端接口封装
-│       ├── components/       # 公共组件
-│       ├── router/           # 路由配置
-│       ├── stores/           # Pinia 状态管理
-│       ├── styles/           # 主题样式
-│       └── views/            # 页面组件
+│       ├── api/                # 后端接口封装
+│       ├── components/         # 公共组件
+│       ├── router/             # 路由配置
+│       ├── stores/             # Pinia 状态管理
+│       ├── styles/             # 主题样式
+│       └── views/              # 页面组件
 │
-└── README.md                # 本文件
+└── README.md                   # 本文件
 ```
 
-## 当前进度
-
-| 模块 | 状态 |
-|------|------|
-| 后端（FastAPI） | ✅ 已完成 |
-| 前端（Vue 3） | ✅ 已完成 |
-| 前后端联调 | ✅ 已完成 |
-| RAG 检索 | ✅ 已接入（4 岗位向量库） |
-| AI Agent（6 个串行） | ✅ 已接入（纯 Python，不依赖外部模型 API） |
-| 防幻觉层 | 🚧 Mock（审核纠偏函数预留，待 source_chunk_id 字段补齐后接入） |
-
-> Agent 无需外部模型 API 即可运行。关闭 Ollama 时，诊断仍正常输出，资源生成会提示无知识库来源而非伪造内容。
-
-## 队友接口说明
-
-队友提供的接口：
-
-| 接口 | 功能 | 状态 |
-|------|------|------|
-| 向量检索 | ChromaDB + Ollama 文档检索 | ✅ 已接入 |
-| 能力诊断 | 多 Agent 分析，输出能力向量 + 知识缺口 | ✅ 已接入 |
-| 学习资源生成 | 基于知识库片段组装资源内容 | ✅ 已接入 |
-| 学习路径规划 | 按能力排序生成学习步骤 | ✅ 已接入 |
-| 内容审核纠偏 | 校验资源来源，无来源则阻断 | 🚧 Mock（待字段补齐） |
-
-### RAG 向量检索（已接入）
-
-队友通过 ChromaDB + Ollama（`nomic-embed-text`）提供了 4 个岗位的知识库向量数据，已通过适配层接入后端：
-
-**4 个向量集合：**
-
-| 岗位 | ChromaDB 目录 | 集合名 |
-|------|-------------|--------|
-| 产品经理 | `my_vector_db/` | `product_kb` |
-| 前端开发工程师 | `db_frontend/` | `frontend_kb` |
-| 后端开发工程师 | `db_backend/` | `backend_kb` |
-| 运维工程师 | `db_ops/` | `ops_kb` |
-
-**API 端点：**
-
-```
-GET /api/resource/search?q=需求分析&job=产品经理&top_k=5
-```
-
-后端 `adapters/vector_adapter.py` 中的 `JOB_COLLECTION_MAP` 负责岗位名 → 目录/集合的路由。加新岗位只需在映射表加一行。
-
-### AI Agent（已接入）
-
-`agent_runtime.py` 包含 6 个串行 Agent，覆盖四个岗位（前端、后端、运维、产品经理），不依赖外部模型 API：
+## AI Agent 流水线
 
 ```
 用户自由文本
-  → 自由文本学情解析 Agent（关键词匹配 + 否定表述识别）
-  → 岗位知识库检索 Agent（调 ChromaDB 检索相关片段）
+  → 资料审查（AI 判断描述是否充分，不足则提示补充）
+  → 自由文本学情解析 Agent（LLM 语义理解 / 关键词匹配降级）
+  → 岗位知识库检索 Agent（Qdrant + BGE-M3 向量检索）
   → 岗位能力诊断 Agent（生成 16 维能力向量 + 知识缺口）
   → 诊断结果校正 Agent（校验字段、数值范围、文本充分度）
-  → 个性化资源生成 Agent（基于检索片段组装内容，无来源则阻断）
-  → 个性化学习路径 Agent（按能力排序生成学习步骤）
+  → 防幻觉校验（DeepSeek 比对知识库原文）
+  → 个性化资源生成 Agent（基于检索片段生成讲义/练习/案例）
+  → 层2 资源校验（比对原文，标记 passed / partial / blocked）
+  → 个性化学习路径 Agent（按能力缺口规划 8 步学习路径）
 ```
 
-所有 Agent 输出通过 `agent_adapter.py` 的三个函数（`diagnose` / `generate_resource` / `plan_learning_path`）暴露，前端接口无变化。
+7 个 Agent 串行执行，每个 Agent 有独立身份（system prompt），LLM 不可用时自动降级为确定性规则引擎。
+
+## 四个岗位能力模型
+
+| 岗位 | 技能数 | 核心维度 | 知识库片段 |
+|------|--------|---------|-----------|
+| 前端开发工程师 | 16 项 | 前端技术、编程基础 | 518 |
+| 后端开发工程师 | 16 项 | 编程基础、数据结构与算法、后端技术、数据库、系统设计 | 1,149 |
+| 运维工程师 | 16 项 | 计算机网络、操作系统、运维部署、安全规范 | 588 |
+| 产品经理 | 16 项 | 产品分析、项目管理、沟通表达、逻辑思维 | 14 |
+
+## 常见问题
+
+### 首次诊断等待很久
+
+首次提交诊断时 BGE-M3 模型（2.2GB）需要加载到内存，约 20~40 秒。加载后常驻内存，后续请求恢复正常速度。
+
+### "个性化学习"内容重复/模板化
+
+说明 LLM 未接入。检查 `backend/llm_config.json` 中的 `api_key` 是否已填写正确。
+
+### 端口被占用
+
+```bash
+# Windows 查看 8000 端口占用
+netstat -ano | findstr :8000
+# 记下 PID，然后杀掉
+taskkill -F -PID <PID>
+```
+
+### 后端启动报错 ModuleNotFoundError
+
+依赖未安装或版本过旧：
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### 向量检索返回空
+
+`backend/qdrant_storage/` 或 `backend/bge-m3/` 目录缺失或损坏，需要从队友处获取最新知识库文件。
