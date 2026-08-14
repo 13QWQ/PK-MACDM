@@ -8,7 +8,6 @@ materials, or dialogue fields.
 from __future__ import annotations
 
 from .agent_runtime import AgentRuntime
-from .mock_data import MOCK_REVIEW_RESULT
 
 
 _runtime = AgentRuntime()
@@ -37,9 +36,31 @@ def plan_learning_path(user_id: str, target_job: str, current_ability: list) -> 
     )
 
 
-def review_resources(package_id: str, resources: list[dict]) -> dict:
-    """内容审核与纠偏（Mock 版本，待 resources 表添加 source_chunk_id 列后接入正式审核）"""
-    return MOCK_REVIEW_RESULT
+def review_resources(package_id: str, resources: list[dict]) -> list[dict]:
+    """层2：逐条资源做知识库校验（防幻觉），返回每条的校验结论。
+
+    verdict → status 映射：grounded→passed / partial→partial / ungrounded→blocked / 无来源→skipped
+    """
+    from .guardrail import check_hallucination
+
+    verdict_to_status = {"grounded": "passed", "partial": "partial", "ungrounded": "blocked"}
+    results = []
+    for r in resources:
+        source_text = r.get("source_text", "")
+        if not source_text:
+            results.append({
+                "resource_id": r.get("resource_id", ""),
+                "status": "skipped",
+                "reason": "无知识库来源，跳过校验",
+            })
+            continue
+        guard = check_hallucination(source_text, r.get("body", ""))
+        results.append({
+            "resource_id": r.get("resource_id", ""),
+            "status": verdict_to_status.get(guard.get("verdict", "grounded"), "passed"),
+            "reason": guard.get("reason", ""),
+        })
+    return results
 
 
 def get_last_trace() -> dict:

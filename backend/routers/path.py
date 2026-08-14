@@ -28,7 +28,7 @@ class PathStep(BaseModel):
     resource_type: str
     resource_id: str | None = None
     estimated_time: int
-    prerequisite: str = None
+    prerequisite: str | None = None
     status: str = "not_started"
     record_id: str | None = None
     weight: str = "mid"
@@ -38,7 +38,7 @@ class LearningPathResponse(BaseModel):
     id: str
     user_id: str
     job_id: str
-    steps: list[PathStep] = None
+    steps: list[PathStep] | None = None
     current_step: int
     status: str
     created_at: datetime
@@ -102,7 +102,7 @@ def get_learning_paths(
 
     paths = db.query(LearningPath).filter(
         LearningPath.user_id == user_id,
-    ).all()
+    ).order_by(LearningPath.created_at.desc()).all()
 
     # 为每条路径的每个 step 补上 resource_id、status、record_id、weight
     for path in paths:

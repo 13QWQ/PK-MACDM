@@ -7,6 +7,10 @@ export interface ResourceInfo {
   title: string
   body: string
   difficulty: number | null
+  source_chunk_id: string | null
+  source_text: string | null
+  review_status: string | null
+  review_reason: string | null
   created_at: string
 }
 

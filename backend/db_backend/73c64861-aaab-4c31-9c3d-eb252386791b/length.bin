@@ -1,1 +1,0 @@
-invalid type: string "：BE - 1084\n难度：中等\n问题：addEventListener第三个参数可以传哪些值？\n回答：第三个参数可以是布尔值（false=冒泡阶段，true=捕获阶段），也可以是一个options对象，支持三个属性：capture（是否捕获）、once（执行一次后自动移除）、passive（true表示不会调用preventDefault，可提升滚动性能�

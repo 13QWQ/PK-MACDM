@@ -1,61 +1,67 @@
 """
 向量库接口适配层
-队友接口格式（ChromaDB + Ollama） -> 我的格式
+队友接口格式（Qdrant + BGE-M3） -> 我的格式
 
-依赖 ollama、chromadb，仅在调用检索函数时按需导入，
+依赖 qdrant-client、FlagEmbedding，仅在调用检索函数时按需导入，
 未安装时后端其余功能不受影响，搜索接口返回空列表。
 """
 
 import os
 
-# ─── 岗位 → (ChromaDB目录, 集合名) 映射 ──────────────────
-# 队友每建好一个新岗位的向量库后，把目录和集合名加一行即可
-_BACKEND_DIR = os.path.dirname(os.path.dirname(__file__))
+# ─── 岗位 → Qdrant career_id 映射 ──────────────────
+# 队友用英文 career_id 标识岗位，这里做中文名到英文的映射
 
-JOB_COLLECTION_MAP: dict[str, tuple[str, str]] = {
-    "产品经理":      ("my_vector_db", "product_kb"),
-    "前端开发工程师": ("db_frontend",  "frontend_kb"),
-    "后端开发工程师": ("db_backend",   "backend_kb"),
-    "运维工程师":    ("db_ops",       "ops_kb"),
+JOB_CAREER_MAP: dict[str, str] = {
+    "产品经理":      "product_manager",
+    "前端开发工程师": "frontend_engineer",
+    "后端开发工程师": "java_backend_engineer",
+    "运维工程师":    "operations_engineer",
 }
 
-# 按 DB 目录缓存 ChromaDB 客户端（同目录复用）
-_clients: dict = {}
+_BACKEND_DIR = os.path.dirname(os.path.dirname(__file__))
+_QDRANT_PATH = os.path.join(_BACKEND_DIR, "qdrant_storage")
+_MODEL_PATH = os.path.join(_BACKEND_DIR, "bge-m3")
+
+_client = None
+_model = None
 _imports_checked: bool = False
 
 
 def _ensure_imports() -> bool:
-    """按需导入 ollama / chromadb，未安装返回 False"""
-    global _imports_checked, ollama, chromadb
+    """按需导入 qdrant-client / FlagEmbedding，未安装返回 False"""
+    global _imports_checked, QdrantClient, Filter, FieldCondition, MatchValue, BGEM3FlagModel
     if _imports_checked:
         return True
     try:
-        import ollama as _ollama
-        import chromadb as _chromadb
-        ollama = _ollama
-        chromadb = _chromadb
+        from qdrant_client import QdrantClient as _QdrantClient
+        from qdrant_client.models import Filter as _Filter, FieldCondition as _FieldCondition, MatchValue as _MatchValue
+        from FlagEmbedding import BGEM3FlagModel as _BGEM3FlagModel
+
+        QdrantClient = _QdrantClient
+        Filter = _Filter
+        FieldCondition = _FieldCondition
+        MatchValue = _MatchValue
+        BGEM3FlagModel = _BGEM3FlagModel
         _imports_checked = True
         return True
     except ImportError:
         return False
 
 
-def _get_client(db_dir: str):
-    """获取或创建 ChromaDB 客户端（按目录缓存）"""
-    if db_dir not in _clients:
-        _clients[db_dir] = chromadb.PersistentClient(
-            path=os.path.join(_BACKEND_DIR, db_dir)
-        )
-    return _clients[db_dir]
+def _get_client():
+    """获取或创建 Qdrant 本地客户端（单例）"""
+    global _client
+    if _client is None:
+        _client = QdrantClient(path=_QDRANT_PATH)
+    return _client
 
 
-def _get_collection(job: str):
-    """根据岗位名获取对应的 ChromaDB 集合"""
-    entry = JOB_COLLECTION_MAP.get(job)
-    if not entry:
-        return None
-    db_dir, collection_name = entry
-    return _get_client(db_dir).get_collection(collection_name)
+def _get_model():
+    """获取或创建 BGE-M3 嵌入模型（单例）"""
+    global _model
+    if _model is None:
+        _model = BGEM3FlagModel(_MODEL_PATH, use_fp16=True)
+    return _model
 
 
 def search_similar_resources(query: str, job: str = "产品经理", top_k: int = 5) -> list:
@@ -64,7 +70,7 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
 
     输入：
         query: 查询文本
-        job: 目标岗位（用于选择对应的向量集合）
+        job: 目标岗位（用于过滤对应岗位的知识库）
         top_k: 返回数量
 
     输出：
@@ -76,31 +82,95 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
             }
         ]
 
-    如果 ollama/chromadb 未安装、Ollama 服务未启动、或岗位未配置向量库，返回空列表。
+    如果 qdrant-client/FlagEmbedding 未安装、模型未下载、或岗位未配置，返回空列表。
     """
     if not _ensure_imports():
         return []
 
-    collection = _get_collection(job)
-    if not collection:
+    career_id = JOB_CAREER_MAP.get(job)
+    if not career_id:
         return []
 
     try:
-        query_emb = ollama.embeddings(model="nomic-embed-text", prompt=query)["embedding"]
-        res = collection.query(query_embeddings=[query_emb], n_results=top_k)
+        model = _get_model()
+        client = _get_client()
+
+        query_vec = model.encode([query], return_dense=True)["dense_vecs"][0].tolist()
+
+        response = client.query_points(
+            collection_name="career_knowledge_v1",
+            query=query_vec,
+            query_filter=Filter(must=[
+                FieldCondition(key="career_id", match=MatchValue(value=career_id)),
+                FieldCondition(key="review_status", match=MatchValue(value="ready_for_reembedding")),
+            ]),
+            limit=top_k,
+        )
 
         result_list = []
-        for i in range(min(top_k, len(res["ids"][0]))):
-            item = {
-                "title": res["metadatas"][0][i]["filename"],
-                "content": res["documents"][0][i],
-                "score": round(1 - res["distances"][0][i], 2),
-            }
-            result_list.append(item)
+        for hit in response.points:
+            payload = hit.payload or {}
+            result_list.append({
+                "title": payload.get("source_document", ""),
+                "content": payload.get("content", ""),
+                "score": round(float(hit.score), 2),
+                "id": str(hit.id),
+            })
         return result_list
     except Exception:
-        # Ollama 未启动或其他异常 → 降级返回空列表
         return []
+
+
+def search_all_careers(query: str, top_k: int = 3) -> list:
+    """
+    跨岗位检索（资源表未存岗位，回填旧数据时用）
+
+    与 search_similar_resources 同逻辑，但不按 career_id 过滤，
+    仅保留 review_status == "ready_for_reembedding" 的质量过滤。
+
+    返回结构同 search_similar_resources：[{"title","content","score","id"}]
+    """
+    if not _ensure_imports():
+        return []
+
+    try:
+        model = _get_model()
+        client = _get_client()
+
+        query_vec = model.encode([query], return_dense=True)["dense_vecs"][0].tolist()
+
+        response = client.query_points(
+            collection_name="career_knowledge_v1",
+            query=query_vec,
+            query_filter=Filter(must=[
+                FieldCondition(key="review_status", match=MatchValue(value="ready_for_reembedding")),
+            ]),
+            limit=top_k,
+        )
+
+        result_list = []
+        for hit in response.points:
+            payload = hit.payload or {}
+            result_list.append({
+                "title": payload.get("source_document", ""),
+                "content": payload.get("content", ""),
+                "score": round(float(hit.score), 2),
+                "id": str(hit.id),
+            })
+        return result_list
+    except Exception:
+        return []
+
+
+def ensure_accessible() -> bool:
+    """预检向量库是否可访问（本地模式单进程，后端运行时 Qdrant 会被锁，返回 False）"""
+    if not _ensure_imports():
+        return False
+    try:
+        _get_client()
+        return True
+    except Exception:
+        return False
 
 
 def search_similar_cases(user_vector: list, top_k: int = 5) -> list:
@@ -121,5 +191,4 @@ def search_similar_cases(user_vector: list, top_k: int = 5) -> list:
             }
         ]
     """
-    # 案例检索目前用不上，留空
     return []

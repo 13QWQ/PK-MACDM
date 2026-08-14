@@ -17,5 +17,6 @@ class Assessment(Base):
     ability_vector = Column(JSON, nullable=True)  # 16个维度的值
     ability_matrix = Column(JSON, nullable=True)  # 能力达标矩阵 [{ability, target, evidence, status}, ...]
     knowledge_gaps = Column(JSON, nullable=True)  # 薄弱知识点
+    gap_validation = Column(JSON, nullable=True)  # 缺口校验明细 [{gap, status, reason}]
     confidence = Column(Numeric(5, 4), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

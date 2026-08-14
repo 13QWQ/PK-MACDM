@@ -83,7 +83,7 @@
           <span class="feature-badge purple">个性化推荐</span>
         </div>
         <p class="feature-desc">基于诊断结果，为你推荐个性化的学习资源，包括讲义、练习、案例、视频等多种类型。</p>
-        <a href="#" class="feature-link" @click.prevent="showExample = true">查看资源示例 →</a>
+        <a href="#" class="feature-link" @click.prevent="showResourceExample = true">查看资源示例 →</a>
       </div>
     </section>
 
@@ -96,7 +96,7 @@
           <span class="feature-badge">智能规划</span>
         </div>
         <p class="feature-desc" style="max-width: 800px">根据你的能力诊断结果，AI 为你规划专属的学习路径，按步骤提升薄弱能力，每个步骤都配有推荐资源和预计学习时间，让学习更有条理、更高效。</p>
-        <a href="#" class="feature-link" @click.prevent="showExample = true">查看路径示例 →</a>
+        <a href="#" class="feature-link" @click.prevent="showPathExample = true">查看路径示例 →</a>
       </div>
     </section>
 
@@ -133,7 +133,7 @@
     <!-- 示例报告弹窗 -->
     <el-dialog
       v-model="showExample"
-      title="示例诊断报告"
+      title="示例诊断报告（仅供参考）"
       width="920px"
       top="3vh"
       :close-on-click-modal="false"
@@ -159,6 +159,12 @@
           </div>
         </div>
 
+        <!-- 我的输入 -->
+        <div class="ex-input">
+          <h4>📝 我的输入</h4>
+          <div class="ex-input-body">我目前是计算机专业大三学生，目标是成为一名前端开发工程师。熟悉 HTML、CSS 和 JavaScript，用 Vue 做过两个课程项目（电商前端页面、校园活动报名系统），主要负责页面布局、组件封装和接口联调，使用过 Webpack，了解响应式布局。目前算法题刷得少，贪心和动态规划不太熟练，前端性能优化和 TypeScript 也是初学，希望系统帮我分析短板并给出学习建议。</div>
+        </div>
+
         <!-- 雷达图 -->
         <div class="ex-chart-card">
           <h4>能力雷达图</h4>
@@ -169,13 +175,106 @@
         <div class="ex-gaps">
           <h4>知识缺口</h4>
           <p class="ex-gap-sub">以下能力领域尚未达标或证据不足，建议重点关注</p>
-          <div class="ex-gap-item"><span>1</span>贪心算法</div>
-          <div class="ex-gap-item"><span>2</span>动态规划</div>
+          <div class="ex-gap-item"><span>1</span>TypeScript</div>
+          <div class="ex-gap-item"><span>2</span>前端性能优化</div>
         </div>
       </div>
       <template #footer>
         <el-button @click="showExample = false">关闭</el-button>
         <el-button type="primary" @click="showExample = false; $router.push('/input')">开始我的诊断</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 资源包示例弹窗 -->
+    <el-dialog
+      v-model="showResourceExample"
+      title="资源包示例（仅供参考）"
+      width="720px"
+      top="18vh"
+      :close-on-click-modal="false"
+    >
+      <div class="example-resources">
+        <div class="resource-card">
+          <div class="rc-header">
+            <span class="rc-type-icon">📖</span>
+            <span class="rc-type-tag">讲义</span>
+            <span class="rc-difficulty">
+              <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= 3 }">★</span>
+            </span>
+          </div>
+          <h4 class="rc-title">TypeScript 类型系统入门</h4>
+          <div class="rc-footer">
+            <span class="rc-point">TypeScript</span>
+            <span class="rc-arrow">查看 →</span>
+          </div>
+        </div>
+        <div class="resource-card">
+          <div class="rc-header">
+            <span class="rc-type-icon">✏️</span>
+            <span class="rc-type-tag">练习</span>
+            <span class="rc-difficulty">
+              <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= 4 }">★</span>
+            </span>
+          </div>
+          <h4 class="rc-title">前端性能优化实战练习</h4>
+          <div class="rc-footer">
+            <span class="rc-point">前端性能优化</span>
+            <span class="rc-arrow">查看 →</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showResourceExample = false">关闭</el-button>
+        <el-button type="primary" @click="showResourceExample = false; $router.push('/input')">开始我的诊断</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 学习路径示例弹窗 -->
+    <el-dialog
+      v-model="showPathExample"
+      title="学习路径示例（仅供参考）"
+      width="720px"
+      top="8vh"
+      :close-on-click-modal="false"
+    >
+      <div class="example-path">
+        <div class="path-status-row">
+          <span class="path-status-badge active">进行中</span>
+          <span class="path-date">创建于 2026-08-10</span>
+        </div>
+        <div class="timeline">
+          <div
+            v-for="(step, i) in EXAMPLE_PATH_STEPS"
+            :key="step.step"
+            class="timeline-step"
+            :class="{ last: i === EXAMPLE_PATH_STEPS.length - 1 }"
+          >
+            <div class="tl-left">
+              <div class="tl-node" :class="step.status">
+                <span v-if="step.status === 'completed'">✓</span>
+                <span v-else>{{ step.step }}</span>
+              </div>
+              <div v-if="i < EXAMPLE_PATH_STEPS.length - 1" class="tl-line" :class="{ filled: step.status === 'completed' }"></div>
+            </div>
+            <div class="tl-content">
+              <div class="tl-title-row">
+                <span class="tl-type-icon">{{ step.resource_type === '讲义' ? '📖' : '✏️' }}</span>
+                <span class="tl-point">{{ step.knowledge_point }}</span>
+                <span class="tl-type-tag">{{ step.resource_type }}</span>
+                <span v-if="step.weight === 'high'" class="tl-weight high">核心</span>
+                <span v-else-if="step.weight === 'mid'" class="tl-weight mid">支撑</span>
+              </div>
+              <div class="tl-meta">
+                <span>⏱ {{ step.estimated_time }} 分钟</span>
+                <span v-if="step.prerequisite">📎 前置：{{ step.prerequisite }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showPathExample = false">关闭</el-button>
+        <el-button type="primary" @click="showPathExample = false; $router.push('/input')">开始我的诊断</el-button>
       </template>
     </el-dialog>
   </div>
@@ -186,13 +285,15 @@ import { ref, nextTick } from 'vue'
 import * as echarts from 'echarts'
 
 const showExample = ref(false)
+const showResourceExample = ref(false)
+const showPathExample = ref(false)
 const exampleChartRef = ref<HTMLDivElement | null>(null)
 let exampleChart: echarts.ECharts | null = null
 
 // 示例雷达图 — 16 维度的静态 mock 数据
 const EXAMPLE_VECTOR = [
   { name: '编程基础', value: 0.8, weight: 'high' as const },
-  { name: '数据结构与算法', value: 0.6, weight: 'high' as const },
+  { name: '数据结构与算法', value: 0.6, weight: 'mid' as const },
   { name: '计算机网络', value: 0.9, weight: 'mid' as const },
   { name: '操作系统', value: 0.7, weight: 'low' as const },
   { name: '前端技术', value: 0.5, weight: 'high' as const },
@@ -207,6 +308,16 @@ const EXAMPLE_VECTOR = [
   { name: '逻辑思维', value: 0.7, weight: 'mid' as const },
   { name: '学习能力', value: 0.8, weight: 'mid' as const },
   { name: '安全规范', value: 0.6, weight: 'low' as const },
+]
+
+// 示例学习路径 — 静态 mock（对应前端开发工程师，HTML→CSS→JS→Vue→React→TypeScript）
+const EXAMPLE_PATH_STEPS = [
+  { step: 1, knowledge_point: 'HTML', resource_type: '讲义', estimated_time: 30, prerequisite: null, status: 'pending', weight: 'high' },
+  { step: 2, knowledge_point: 'CSS', resource_type: '练习', estimated_time: 30, prerequisite: 'HTML', status: 'pending', weight: 'high' },
+  { step: 3, knowledge_point: 'JavaScript', resource_type: '讲义', estimated_time: 30, prerequisite: 'CSS', status: 'pending', weight: 'high' },
+  { step: 4, knowledge_point: 'Vue', resource_type: '练习', estimated_time: 30, prerequisite: 'JavaScript', status: 'pending', weight: 'mid' },
+  { step: 5, knowledge_point: 'React', resource_type: '讲义', estimated_time: 30, prerequisite: 'Vue', status: 'pending', weight: 'mid' },
+  { step: 6, knowledge_point: 'TypeScript', resource_type: '练习', estimated_time: 30, prerequisite: 'React', status: 'pending', weight: 'mid' },
 ]
 
 function initExampleChart() {
@@ -691,6 +802,31 @@ function disposeExampleChart() {
   font-size: 15px;
 }
 
+.ex-input {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.ex-input h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 10px;
+}
+
+.ex-input-body {
+  font-size: 14px;
+  color: #444;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
 .ex-chart-card {
   background: #f8fafc;
   border-radius: 12px;
@@ -754,5 +890,232 @@ function disposeExampleChart() {
   font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+/* ---- 资源包示例卡片 ---- */
+.example-resources {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.resource-card {
+  width: 300px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  padding: 20px 24px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.resource-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
+  transform: translateY(-1px);
+}
+
+.rc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rc-type-icon {
+  font-size: 20px;
+}
+
+.rc-type-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: #eef2ff;
+  color: #2563eb;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.rc-difficulty {
+  margin-left: auto;
+  display: flex;
+  gap: 1px;
+}
+
+.star {
+  font-size: 13px;
+  color: #e5e7eb;
+}
+
+.star.on {
+  color: #f59e0b;
+}
+
+.rc-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.rc-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rc-point {
+  font-size: 12px;
+  color: #888;
+  background: #f5f7fa;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.rc-arrow {
+  font-size: 13px;
+  color: #2563eb;
+}
+
+/* ---- 学习路径示例时间线 ---- */
+.example-path {
+  padding: 0 8px;
+}
+
+.path-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.path-status-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.path-status-badge.active {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.path-date {
+  font-size: 13px;
+  color: #999;
+}
+
+.timeline {
+  padding-left: 4px;
+}
+
+.timeline-step {
+  display: flex;
+  gap: 16px;
+}
+
+.timeline-step:not(.last) {
+  padding-bottom: 4px;
+}
+
+.tl-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tl-node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #f0f0f0;
+  color: #999;
+}
+
+.tl-node.completed {
+  background: #16a34a;
+  color: #fff;
+}
+
+.tl-node.in_progress {
+  background: #2563eb;
+  color: #fff;
+}
+
+.tl-line {
+  width: 2px;
+  flex: 1;
+  min-height: 28px;
+  background: #e5e7eb;
+}
+
+.tl-line.filled {
+  background: #16a34a;
+}
+
+.tl-content {
+  flex: 1;
+  padding: 6px 0 16px;
+}
+
+.tl-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tl-type-icon {
+  font-size: 16px;
+}
+
+.tl-point {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.tl-type-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: #f3f4f6;
+  color: #666;
+  border-radius: 4px;
+}
+
+.tl-weight {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.tl-weight.high {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.tl-weight.mid {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.tl-meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: #999;
 }
 </style>

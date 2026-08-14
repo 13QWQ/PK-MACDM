@@ -46,7 +46,20 @@
 
       <!-- 输入区域（选了职业后才显示） -->
       <div v-if="selectedJobId" class="input-section">
-        <h3 class="section-title">描述你的经历</h3>
+        <h3 class="section-title">
+          描述你的经历
+          <el-tooltip placement="top" effect="light" :show-after="150">
+            <template #content>
+              <div class="tip-box">
+                <div class="tip-title">填写格式</div>
+                <p>我的目标职业是【目标职业】。我会/熟悉【技术或知识点】，能够完成【具体任务】；我做过【项目或实践】，主要负责【具体工作】；我了解但不熟练的是【知识点】；我目前不会或没做过的是【知识点或任务】；我希望优先提升【学习方向】。</p>
+                <div class="tip-title" style="margin-top: 8px">填写示例</div>
+                <p>我的目标职业是后端开发工程师。我会 Java、MySQL 和 Git，能够完成基础接口开发；我做过校园订单管理项目，主要负责用户登录和订单模块；我了解 Spring Boot 但还不熟练；目前不会 Redis、Docker 和系统部署；我希望优先提升项目实战和后端工程化能力。</p>
+              </div>
+            </template>
+            <span class="help-circle">?</span>
+          </el-tooltip>
+        </h3>
         <p class="section-desc">自由描述你的技能、项目经验、学习经历等，AI 将全面分析你的能力水平（最少 10 字）</p>
         <div class="textarea-wrap">
           <textarea
@@ -55,7 +68,7 @@
             :class="{ error: userInput.length > 0 && userInput.length < 10 }"
             placeholder="例如：我会 HTML、CSS、JavaScript，熟悉 Vue 框架，做过一个电商网站的前端开发，主要负责页面布局和组件封装..."
             rows="6"
-            @input="submitError = ''"
+            @input="submitError = ''; reviewHint = ''; reviewMissing = []; submitState = 'idle'"
           ></textarea>
           <div class="char-count" :class="{ warn: userInput.length > 0 && userInput.length < 10 }">
             {{ userInput.length }} / 10 字
@@ -73,15 +86,29 @@
         style="margin-top: 16px; max-width: 600px; margin-left: auto; margin-right: auto"
       />
 
+      <!-- 输入审查提示 -->
+      <el-alert
+        v-if="reviewHint"
+        :title="reviewHint"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-top: 16px; max-width: 600px; margin-left: auto; margin-right: auto"
+      >
+        <template v-if="reviewMissing.length" #default>
+          <div style="margin-top: 4px">可补充：{{ reviewMissing.join('、') }}</div>
+        </template>
+      </el-alert>
+
       <!-- 提交按钮 -->
       <div v-if="selectedJobId" class="submit-area">
         <button
           class="app-btn-submit"
-          :disabled="submitting || !canSubmit"
+          :disabled="submitDisabled"
           @click="handleSubmit"
         >
-          <span v-if="submitting" class="app-spinner"></span>
-          {{ submitting ? 'AI 诊断中，请稍候...' : '开始 AI 诊断' }}
+          <span v-if="submitLoading" class="app-spinner"></span>
+          {{ submitButtonText }}
         </button>
       </div>
     </div>
@@ -91,8 +118,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getJobList, type JobInfo } from '@/api/jobs'
-import { createAssessment, submitAssessment } from '@/api/assessment'
+import { createAssessment, submitAssessment, reviewInput } from '@/api/assessment'
 import { createSession } from '@/api/session'
 import { useUserStore } from '@/stores/user'
 
@@ -127,6 +155,9 @@ async function loadJobs() {
 function selectJob(id: string) {
   selectedJobId.value = id
   submitError.value = ''
+  reviewHint.value = ''
+  reviewMissing.value = []
+  submitState.value = 'idle'
 }
 
 // ---- 用户输入 ----
@@ -136,15 +167,47 @@ const canSubmit = computed(
 )
 
 // ---- 提交流程 ----
-const submitting = ref(false)
+type SubmitState = 'idle' | 'reviewing' | 'insufficient' | 'proceeding'
+const submitState = ref<SubmitState>('idle')
 const submitError = ref('')
+const reviewHint = ref('')
+const reviewMissing = ref<string[]>([])
+
+const submitButtonText = computed(() => {
+  switch (submitState.value) {
+    case 'reviewing': return '正在检查资料完整性…'
+    case 'insufficient': return '补充后重新检查'
+    case 'proceeding': return '资料齐全，正在进入诊断…'
+    default: return '检查资料是否齐全'
+  }
+})
+const submitLoading = computed(() => submitState.value === 'reviewing' || submitState.value === 'proceeding')
+const submitDisabled = computed(() => submitLoading.value || !canSubmit.value)
 
 async function handleSubmit() {
   if (!canSubmit.value || !selectedJobId.value) return
 
-  submitting.value = true
   submitError.value = ''
+  reviewHint.value = ''
+  reviewMissing.value = []
 
+  // ⓪ 提交前审查输入完整性：内容不够就留在当前页，原文不动，提示补充
+  submitState.value = 'reviewing'
+  try {
+    const review = await reviewInput({ job_id: selectedJobId.value, user_input: userInput.value })
+    if (!review.sufficient) {
+      reviewMissing.value = review.missing || []
+      reviewHint.value = review.hint || '内容还不够，请再补充一些技能、项目或短板描述'
+      submitState.value = 'insufficient'
+      return
+    }
+  } catch {
+    // 审查接口异常：fail-open 放行，继续进入诊断
+    ElMessage.info('输入审查失败，已跳过')
+  }
+
+  // ① 资料齐全：进入诊断流程
+  submitState.value = 'proceeding'
   try {
     // ①② 创建评估 + 会话并行（互不依赖，减少一次网络往返）
     const [assessment, session] = await Promise.all([
@@ -156,14 +219,16 @@ async function handleSubmit() {
     if (store.userInfo) {
       store.userInfo.latest_assessment_id = assessment.id
     }
-    // ③ 提交用户输入，触发 AI 诊断
-    await submitAssessment(assessment.id, { user_input: userInput.value })
+    // ③ 立即跳转到诊断页（assessment 尚未提交，overall_mastery 为 null，显示"AI 诊断进行中"等待界面）
     router.push(`/diagnosis/${assessment.id}`)
+    // ④ 后台提交用户输入，触发 AI 诊断（不阻塞跳转）
+    submitAssessment(assessment.id, { user_input: userInput.value }).catch(() => {
+      ElMessage.error('诊断失败，请返回资料审查重新提交')
+    })
   } catch (e: any) {
     const detail = e?.response?.data?.detail
     submitError.value = typeof detail === 'string' ? detail : '诊断请求失败，请稍后重试'
-  } finally {
-    submitting.value = false
+    submitState.value = 'idle'
   }
 }
 
@@ -287,6 +352,51 @@ onMounted(() => {
   font-weight: 700;
   color: #111827;
   margin-bottom: 8px;
+}
+
+/* ---- 提示问号圈 ---- */
+.help-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid #c0c4cc;
+  color: #909399;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+  margin-left: 4px;
+  vertical-align: middle;
+  line-height: 1;
+  user-select: none;
+}
+
+.help-circle:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eef2ff;
+}
+
+/* ---- 提示浮层内容 ---- */
+.tip-box {
+  max-width: 340px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.tip-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.tip-box p {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: #555;
 }
 
 .section-desc {

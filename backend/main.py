@@ -4,12 +4,36 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from database import engine, Base, SessionLocal
 from routers import auth, assessment, session, resource, path, jobs, record
 
 # 自动创建数据库表
 Base.metadata.create_all(bind=engine)
+
+
+# ─── SQLite 迁移：老库补齐新增列（create_all 不会给已有表加列）───
+def _ensure_columns(table: str, columns: dict[str, str]) -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        existing = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))]
+        for col, dtype in columns.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}"))
+
+
+_ensure_columns("assessments", {"gap_validation": "TEXT"})
+_ensure_columns("resources", {
+    "source_chunk_id": "VARCHAR(100)",
+    "source_text": "TEXT",
+    "source_title": "VARCHAR(255)",
+    "source_score": "DECIMAL(6, 4)",
+    "review_status": "VARCHAR(20)",
+    "review_reason": "TEXT",
+})
 
 # ─── 种子数据：4个职业 ──────────────────────────────────
 
@@ -72,6 +96,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 全局验证错误处理
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request, exc):
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(status_code=500, content={"detail": f"数据校验失败: {exc}"})
 
 # 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["用户认证"])

@@ -35,7 +35,13 @@ class ResourceResponse(BaseModel):
     content_type: str
     title: str
     body: str
-    difficulty: int = None
+    difficulty: int | None = None
+    source_chunk_id: str | None = None
+    source_text: str | None = None
+    source_title: str | None = None
+    source_score: float | None = None
+    review_status: str | None = None
+    review_reason: str | None = None
     created_at: datetime
 
 
