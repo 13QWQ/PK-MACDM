@@ -51,14 +51,12 @@ pip install -r requirements.txt
 
 > 同一个 Key 同时用于主推理与防幻觉校验（见第 4 节），无需额外配置。
 
-### 3. 向量库与嵌入模型（需自行获取）
+### 3. 向量库与嵌入模型
 
-以下两部分**不随仓库分发**，需自行准备后放到 `backend/` 下：
+- **qdrant_storage 向量库**（2,269 条岗位知识片段）：已随仓库分发，clone 后直接可用，无需额外获取。
+- **BGE-M3 嵌入模型**（约 2.2GB）：**需自行下载**（体积过大，未随仓库分发）。从 HuggingFace 下载 `BAAI/bge-m3`，把整个模型目录放到 `backend/bge-m3/`。国内可设镜像 `HF_ENDPOINT=https://hf-mirror.com` 加速。
 
-- **BGE-M3 嵌入模型**（约 2.2GB）：从 HuggingFace 下载 `BAAI/bge-m3`，把整个模型目录放到 `backend/bge-m3/`。国内可设镜像 `HF_ENDPOINT=https://hf-mirror.com` 加速。
-- **qdrant_storage 向量库**（2,269 条岗位知识片段）：由 RAG 队友构建，本仓库不含构建脚本，向队友获取后放到 `backend/qdrant_storage/`。
-
-> 缺少模型或向量库时后端不会崩溃，但向量检索会返回空、资源生成退化为模板内容；补全后即恢复完整效果。BGE-M3 首次加载约 20~40 秒，加载后常驻内存。
+> 缺少模型时后端不会崩溃，但向量检索会返回空、资源生成退化为模板内容；补全后即恢复完整效果。BGE-M3 首次加载约 20~40 秒，加载后常驻内存。
 
 ### 4. 防幻觉校验（无需单独部署）
 
@@ -107,7 +105,7 @@ npm run dev
 │   ├── llm_config.json         # ★ LLM 配置（API Key、模型地址）
 │   ├── capability_diagnosis.db # SQLite 数据库
 │   ├── bge-m3/                 # ★ BGE-M3 嵌入模型（需自行下载，不随仓库分发）
-│   ├── qdrant_storage/         # ★ Qdrant 向量知识库（需从队友获取，不随仓库分发）
+│   ├── qdrant_storage/         # Qdrant 向量知识库（2,269 条，已随仓库分发）
 │   ├── models/                 # ORM 模型
 │   ├── routers/                # API 路由
 │   ├── adapters/               # 适配层
@@ -186,4 +184,4 @@ pip install -r requirements.txt
 
 ### 向量检索返回空
 
-`backend/qdrant_storage/` 或 `backend/bge-m3/` 目录缺失，按第 3 节「向量库与嵌入模型」自行放置；或从队友处获取最新知识库文件。
+`backend/bge-m3/` 目录缺失（需自行下载，见第 3 节）；`backend/qdrant_storage/` 缺失或损坏则从队友处获取最新知识库文件。
