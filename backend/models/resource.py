@@ -28,5 +28,14 @@ class Resource(Base):
 
     @property
     def display_status(self) -> str:
-        """展示状态：hide=前端不展示，show=正常展示。视频脚本默认不展示。"""
-        return "hide" if (self.content_type or "") == "视频脚本" else "show"
+        """Only reviewed, traceable resources may enter the learner-facing library."""
+        normalized_type = str(self.content_type or "").strip().lower()
+        if normalized_type in {"视频脚本", "video_script", "video script", "视频"}:
+            return "hide"
+        if self.review_status != "passed":
+            return "hide"
+        if not str(self.source_chunk_id or "").strip() or not str(self.source_text or "").strip():
+            return "hide"
+        if int(self.is_legacy or 0) == 1:
+            return "hide"
+        return "show"

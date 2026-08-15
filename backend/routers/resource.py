@@ -13,6 +13,7 @@ from models.resource import Resource
 from models.user import User
 from routers.auth import get_current_user
 from adapters import vector_adapter
+from adapters.guardrail import detect_source_leak, detect_unrequested_resource_type
 
 router = APIRouter()
 
@@ -21,7 +22,6 @@ router = APIRouter()
 
 class SearchResult(BaseModel):
     title: str
-    content: str
     score: float
     source_chunk_id: str | None = None
     parent_source_chunk_id: str | None = None
@@ -40,7 +40,6 @@ class ResourceResponse(BaseModel):
     body: str
     difficulty: int | None = None
     source_chunk_id: str | None = None
-    source_text: str | None = None
     source_title: str | None = None
     source_score: float | None = None
     review_status: str | None = None
@@ -71,8 +70,17 @@ def list_resources(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """获取资源列表，支持按知识点/类型/诊断记录过滤，按创建时间倒序"""
-    q = db.query(Resource)
+    """获取学习者可见资源。
+
+    检索原文不属于资料库展示内容；只有已经通过审核、拥有来源链且
+    非历史旧资源的内容才允许从这个面向学习者的接口返回。
+    """
+    q = db.query(Resource).filter(
+        Resource.review_status == "passed",
+        Resource.source_chunk_id.isnot(None),
+        Resource.source_text.isnot(None),
+        Resource.is_legacy == 0,
+    )
 
     if knowledge_point:
         q = q.filter(Resource.knowledge_point == knowledge_point)
@@ -81,7 +89,13 @@ def list_resources(
     if assessment_id:
         q = q.filter(Resource.assessment_id == assessment_id)
 
-    return q.order_by(Resource.created_at.desc()).all()
+    candidates = q.order_by(Resource.created_at.desc()).all()
+    return [
+        resource for resource in candidates
+        if resource.display_status == "show"
+        and not detect_source_leak(resource.source_text or "", resource.body or "").get("leaked")
+        and not detect_unrequested_resource_type(resource.body or "", resource.content_type or "").get("found")
+    ]
 
 
 @router.get("/{resource_id}", response_model=ResourceResponse)
@@ -90,10 +104,21 @@ def get_resource(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """查询资源详情"""
-    resource = db.query(Resource).filter(Resource.id == resource_id).first()
+    """查询已审核通过的学习资源详情，不暴露被拦截或旧资源。"""
+    resource = db.query(Resource).filter(
+        Resource.id == resource_id,
+        Resource.review_status == "passed",
+        Resource.source_chunk_id.isnot(None),
+        Resource.source_text.isnot(None),
+        Resource.is_legacy == 0,
+    ).first()
 
-    if not resource:
+    if not resource or resource.display_status != "show":
         raise HTTPException(status_code=404, detail="资源不存在")
+
+    if detect_source_leak(resource.source_text or "", resource.body or "").get("leaked"):
+        raise HTTPException(status_code=404, detail="资源正在复核，暂不可展示")
+    if detect_unrequested_resource_type(resource.body or "", resource.content_type or "").get("found"):
+        raise HTTPException(status_code=404, detail="资源类型不匹配，暂不可展示")
 
     return resource

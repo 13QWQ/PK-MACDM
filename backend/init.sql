@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS learning_paths (
 -- 学习资源表
 CREATE TABLE IF NOT EXISTS resources (
     id VARCHAR(36) PRIMARY KEY,
+    assessment_id VARCHAR(36),
     knowledge_point VARCHAR(100) NOT NULL,
     content_type ENUM('讲义', '练习', '案例', '视频脚本') NOT NULL,
     title VARCHAR(200) NOT NULL,
@@ -87,7 +88,10 @@ CREATE TABLE IF NOT EXISTS resources (
     review_status VARCHAR(20),
     review_reason TEXT,
     is_legacy TINYINT DEFAULT 0,
+    generation_method VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (assessment_id) REFERENCES assessments(id),
+    INDEX idx_assessment_id (assessment_id),
     INDEX idx_knowledge_point (knowledge_point),
     INDEX idx_source_chunk_id (source_chunk_id),
     INDEX idx_review_status (review_status)

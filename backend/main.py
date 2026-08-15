@@ -34,6 +34,7 @@ _ensure_columns("resources", {
     "review_status": "VARCHAR(20)",
     "review_reason": "TEXT",
     "generation_method": "VARCHAR(20)",
+    "is_legacy": "INTEGER DEFAULT 0",
     "assessment_id": "VARCHAR(36)",
 })
 _ensure_columns("learning_paths", {"assessment_id": "VARCHAR(36)"})

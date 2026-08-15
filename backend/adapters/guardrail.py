@@ -7,8 +7,57 @@
 from __future__ import annotations
 
 import json
+import re
+from difflib import SequenceMatcher
 
 from .llm_client import chat_json
+
+
+SUPPORTED_RESOURCE_TYPES = ("讲义", "练习", "案例")
+
+
+def detect_unrequested_resource_type(response_text: str, requested_type: str) -> dict:
+    """Detect an extra resource-type section inside a generated document."""
+    requested = str(requested_type or "").strip()
+    candidates = set(SUPPORTED_RESOURCE_TYPES) | {"视频脚本", "video_script", "video script"}
+    candidates.discard(requested)
+    for raw_line in str(response_text or "").splitlines():
+        line = re.sub(r"^[\s#>*\-\d.、()（）]+", "", raw_line).strip()
+        if not line:
+            continue
+        for candidate in candidates:
+            if line == candidate or line.startswith(f"{candidate}：") or line.startswith(f"{candidate}:"):
+                return {"found": True, "type": candidate, "line": raw_line.strip()}
+    return {"found": False, "type": "", "line": ""}
+
+
+def detect_source_leak(context_text: str, response_text: str, min_run: int = 80) -> dict:
+    """Detect long verbatim spans copied from the retrieval context.
+
+    A grounded answer may paraphrase the source, but a user-facing resource
+    must not expose a long raw knowledge-base slice. This deterministic check
+    runs before the LLM guardrail so a copied chunk cannot be approved merely
+    because it is factually consistent with the source.
+    """
+    context = re.sub(r"\s+", "", str(context_text or ""))
+    response = re.sub(r"\s+", "", str(response_text or ""))
+    if len(context) < min_run or len(response) < min_run:
+        return {"leaked": False, "longest_run": 0}
+
+    matcher = SequenceMatcher(None, context, response, autojunk=False)
+    match = matcher.find_longest_match(0, len(context), 0, len(response))
+    longest_run = int(match.size)
+    matching_chars = sum(
+        block.size for block in matcher.get_matching_blocks() if block.size >= 20
+    )
+    coverage = matching_chars / max(1, min(len(context), len(response)))
+    return {
+        "leaked": longest_run >= min_run or (matching_chars >= 120 and coverage >= 0.55),
+        "longest_run": longest_run,
+        "matching_chars": matching_chars,
+        "coverage": round(coverage, 3),
+        "threshold": min_run,
+    }
 
 GUARD_SYSTEM = """你是一个严谨的事实核查助手。请判断【AI 回答】是否忠实于【参考文档】。
 

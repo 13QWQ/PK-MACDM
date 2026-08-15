@@ -6,7 +6,9 @@
 未安装时后端其余功能不受影响，搜索接口返回空列表。
 """
 
+import json
 import os
+import re
 
 # ─── 岗位 → Qdrant career_id 映射 ──────────────────
 # 队友用英文 career_id 标识岗位，这里做中文名到英文的映射
@@ -24,10 +26,15 @@ _QDRANT_URL = os.getenv("QDRANT_URL", "").strip()
 _QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "").strip() or None
 _QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "career_knowledge_v1")
 _MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", os.path.join(_BACKEND_DIR, "bge-m3"))
+_KNOWLEDGE_DIR = os.getenv(
+    "KNOWLEDGE_DIR",
+    os.path.join(os.path.dirname(_BACKEND_DIR), "knowledge", "active"),
+)
 
 _client = None
 _model = None
 _imports_checked: bool = False
+_lexical_records: list[dict] | None = None
 
 
 def _ensure_imports() -> bool:
@@ -103,6 +110,111 @@ def _serialize_hit(hit) -> dict:
     }
 
 
+def _load_lexical_records() -> list[dict]:
+    """Load the normalized JSONL slices for a dependency-free fallback.
+
+    Qdrant+BGE-M3 remains the primary retriever.  The fallback is deliberately
+    limited to the same normalized, review-ready slices and returns the same
+    source fields, so generation and guardrail behavior do not change when the
+    embedding model is temporarily unavailable.
+    """
+    global _lexical_records
+    if _lexical_records is not None:
+        return _lexical_records
+
+    records: list[dict] = []
+    if not os.path.isdir(_KNOWLEDGE_DIR):
+        _lexical_records = records
+        return records
+
+    for filename in sorted(os.listdir(_KNOWLEDGE_DIR)):
+        if not filename.endswith(".jsonl"):
+            continue
+        path = os.path.join(_KNOWLEDGE_DIR, filename)
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                for line in file:
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("review_status") or "") != "ready_for_reembedding":
+                        continue
+                    source_chunk_id = str(item.get("source_chunk_id") or "").strip()
+                    content = str(item.get("content") or "").strip()
+                    career_id = str(item.get("career_id") or "").strip()
+                    if source_chunk_id and content and career_id:
+                        records.append({
+                            "source_chunk_id": source_chunk_id,
+                            "parent_source_chunk_id": str(item.get("parent_source_chunk_id") or ""),
+                            "career_id": career_id,
+                            "candidate_requirement_ids": [
+                                str(value) for value in (item.get("candidate_requirement_ids") or [])
+                            ],
+                            "title": str(item.get("source_document") or ""),
+                            "content": content,
+                            "review_status": "ready_for_reembedding",
+                        })
+        except OSError:
+            continue
+
+    _lexical_records = records
+    print(f"[RAG] 已加载词法降级索引: {len(records)} 条知识片段", flush=True)
+    return records
+
+
+def _query_terms(text: str) -> set[str]:
+    """Extract searchable English tokens and Chinese bi/tri-grams."""
+    normalized = re.sub(r"\s+", "", str(text or "").lower())
+    terms = set(re.findall(r"[a-z0-9][a-z0-9+#._/-]{1,}", normalized))
+    for run in re.findall(r"[\u4e00-\u9fff]+", normalized):
+        for size in (2, 3):
+            terms.update(run[index:index + size] for index in range(len(run) - size + 1))
+    return {term for term in terms if len(term) >= 2}
+
+
+def _lexical_search(query: str, career_id: str | None, top_k: int) -> list[dict]:
+    """Return source-traceable lexical matches when vector retrieval is unavailable."""
+    terms = _query_terms(query)
+    if not terms:
+        return []
+
+    normalized_query = re.sub(r"\s+", "", str(query or "").lower())
+    scored: list[tuple[float, dict]] = []
+    for record in _load_lexical_records():
+        if career_id and record["career_id"] != career_id:
+            continue
+        searchable = re.sub(
+            r"\s+", "", f"{record['title']} {record['content']}".lower()
+        )
+        matches = {term for term in terms if term in searchable}
+        if not matches:
+            continue
+        coverage = len(matches) / max(1, len(terms))
+        exact_bonus = 0.15 if normalized_query and normalized_query in searchable else 0.0
+        score = min(0.99, 0.35 + 0.45 * coverage + exact_bonus)
+        scored.append((score, record))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    results = []
+    for score, record in scored[:top_k]:
+        results.append({
+            "id": record["source_chunk_id"],
+            "source_chunk_id": record["source_chunk_id"],
+            "parent_source_chunk_id": record["parent_source_chunk_id"],
+            "point_id": record["source_chunk_id"],
+            "career_id": record["career_id"],
+            "candidate_requirement_ids": record["candidate_requirement_ids"],
+            "review_status": record["review_status"],
+            "title": record["title"],
+            "content": record["content"],
+            "score": round(score, 2),
+        })
+    return results
+
+
 def search_similar_resources(query: str, job: str = "产品经理", top_k: int = 5) -> list:
     """
     相似资源检索（向量检索）
@@ -114,14 +226,15 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
 
     输出：包含 `source_chunk_id`、原文、岗位、审核状态和检索分数的来源对象。
 
-    如果 qdrant-client/FlagEmbedding 未安装、模型未下载、或岗位未配置，返回空列表。
+    如果 qdrant-client/FlagEmbedding 未安装或模型暂时不可用，自动使用
+    knowledge/active 中的标准化 JSONL 做词法降级检索；岗位未配置时返回空列表。
     """
-    if not _ensure_imports():
-        return []
-
     career_id = JOB_CAREER_MAP.get(job)
     if not career_id:
         return []
+
+    if not _ensure_imports():
+        return _lexical_search(query, career_id, top_k)
 
     try:
         model = _get_model()
@@ -140,9 +253,10 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
         )
 
         result_list = [_serialize_hit(hit) for hit in response.points]
-        return result_list
-    except Exception:
-        return []
+        return result_list or _lexical_search(query, career_id, top_k)
+    except Exception as exc:
+        print(f"[RAG] 向量检索不可用，切换词法降级检索: {exc}", flush=True)
+        return _lexical_search(query, career_id, top_k)
 
 
 def search_all_careers(query: str, top_k: int = 3) -> list:
@@ -155,7 +269,7 @@ def search_all_careers(query: str, top_k: int = 3) -> list:
     返回结构同 search_similar_resources，`source_chunk_id` 仍必须来自 payload。
     """
     if not _ensure_imports():
-        return []
+        return _lexical_search(query, None, top_k)
 
     try:
         model = _get_model()
@@ -173,9 +287,10 @@ def search_all_careers(query: str, top_k: int = 3) -> list:
         )
 
         result_list = [_serialize_hit(hit) for hit in response.points]
-        return result_list
-    except Exception:
-        return []
+        return result_list or _lexical_search(query, None, top_k)
+    except Exception as exc:
+        print(f"[RAG] 跨岗位向量检索不可用，切换词法降级检索: {exc}", flush=True)
+        return _lexical_search(query, None, top_k)
 
 
 def ensure_accessible() -> bool:

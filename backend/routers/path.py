@@ -16,6 +16,7 @@ from models.job import Job
 from models.user import User
 from routers.auth import get_current_user
 from dimensions import get_weight_for_knowledge
+from adapters.guardrail import detect_unrequested_resource_type
 
 router = APIRouter()
 
@@ -63,11 +64,17 @@ def _enrich_steps(steps: list[dict], user_id: str, target_job: str, db: Session,
             .filter(
                 Resource.knowledge_point == s["knowledge_point"],
                 Resource.content_type == s["resource_type"],
+                Resource.review_status == "passed",
+                Resource.source_chunk_id.isnot(None),
+                Resource.source_text.isnot(None),
+                Resource.is_legacy == 0,
             )
         )
         if assessment_id:
             q = q.filter(Resource.assessment_id == assessment_id)
         resource = q.order_by(Resource.created_at.desc()).first()
+        if resource and detect_unrequested_resource_type(resource.body or "", resource.content_type or "").get("found"):
+            resource = None
         s["resource_id"] = resource.id if resource else None
 
         # 查学习状态

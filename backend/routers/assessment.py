@@ -3,6 +3,7 @@
 """
 
 import traceback
+import uuid
 from datetime import datetime
 from typing import Literal
 
@@ -233,6 +234,7 @@ def submit_assessment(
                     gap_id=gap_id,
                 )
                 resource = Resource(
+                    id=str(uuid.uuid4()),
                     assessment_id=assessment.id,
                     knowledge_point=gap,
                     content_type=generated["content_type"],
@@ -251,6 +253,7 @@ def submit_assessment(
                     "resource_id": resource.id,
                     "title": generated["title"],
                     "body": generated["body"],
+                    "content_type": generated["content_type"],
                     "gap_id": generated.get("gap_id", gap_id),
                     "source_chunk_id": generated.get("source_chunk_id", ""),
                     "source_text": generated.get("source_text", ""),
@@ -262,17 +265,9 @@ def submit_assessment(
                     55 + round(35 * generated_count / total_resources),
                 )
 
-        # ⑤ 内容审核（层2：逐条资源做知识库校验，防幻觉）
-        _set_progress(assessment.id, "正在内容审查", 92)
-        package_id = f"pkg_{assessment.id}"
-        review_results = agent_adapter.review_resources(package_id, generated_resources)
-        for rr in review_results:
-            res = resource_by_id.get(rr.get("resource_id"))
-            if res:
-                res.review_status = rr.get("status")
-                res.review_reason = rr.get("reason")
-
-        # ⑤.5 完整性兜底：检查低分维度是否全部覆盖，缺失则补资源
+        # ⑤ 完整性兜底：检查低分维度是否全部覆盖，缺失则补资源。
+        # 补出的资源也必须进入 generated_resources，稍后统一审核，
+        # 禁止出现“主流程审核了、补资源绕过审核”的第二条写入路径。
         from adapters.agent_runtime import DIMENSIONS as _DIMS, ROLE_PROFILES as _ROLES
         _role = _ROLES.get(target_job, _ROLES["后端开发工程师"])
         # 构建 skill→dimension 映射
@@ -312,18 +307,43 @@ def submit_assessment(
                                 gap_id=f"gap_fill_{_dim_name}",
                             )
                             resource = Resource(
+                                id=str(uuid.uuid4()),
                                 assessment_id=assessment.id,
                                 knowledge_point=_skill_name,
                                 content_type=generated["content_type"],
                                 title=generated["title"],
                                 body=generated["body"],
                                 difficulty=generated.get("difficulty"),
+                                source_chunk_id=generated.get("source_chunk_id"),
+                                source_text=generated.get("source_text"),
+                                source_title=generated.get("source_title"),
+                                source_score=generated.get("source_score"),
                                 generation_method=generated.get("generation_method"),
                             )
                             db.add(resource)
+                            resource_by_id[resource.id] = resource
+                            generated_resources.append({
+                                "resource_id": resource.id,
+                                "title": generated["title"],
+                                "body": generated["body"],
+                                "content_type": generated["content_type"],
+                                "gap_id": generated.get("gap_id", f"gap_fill_{_dim_name}"),
+                                "source_chunk_id": generated.get("source_chunk_id", ""),
+                                "source_text": generated.get("source_text", ""),
+                            })
         print(f"[CHECK] 覆盖维度: {len(_covered_dims)}/{len(_low_dims)} 低分维度, 资源总数: {len(generated_resources)}", flush=True)
 
-        # ⑥ 持久化
+        # ⑥ 内容审核（层2：主流程资源和补资源统一做知识库校验）
+        _set_progress(assessment.id, "正在内容审查", 92)
+        package_id = f"pkg_{assessment.id}"
+        review_results = agent_adapter.review_resources(package_id, generated_resources)
+        for rr in review_results:
+            res = resource_by_id.get(rr.get("resource_id"))
+            if res:
+                res.review_status = rr.get("status")
+                res.review_reason = rr.get("reason")
+
+        # ⑦ 持久化
         db.commit()
         db.refresh(assessment)
         _set_progress(assessment.id, "完成", 100)

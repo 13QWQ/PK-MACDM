@@ -14,25 +14,27 @@ import sys
 
 from database import SessionLocal
 from models.resource import Resource
-from adapters.guardrail import check_hallucination
+from adapters.guardrail import check_hallucination, detect_source_leak
 from adapters import vector_adapter
 
 VERDICT_TO_STATUS = {"grounded": "passed", "partial": "partial", "ungrounded": "blocked"}
 
-# 检索最高分低于该阈值 → 视为「无可靠匹配来源」，标 skipped（仍显示），
-# 而不是拿弱相关文档硬比导致误判 blocked（上次「资料库被清空」的根因）。
+# 检索最高分低于该阈值 → 视为「无可靠匹配来源」，标 blocked，禁止进入资料库。
 SCORE_THRESHOLD = 0.60
 
 
 def _verify(source_text: str, body: str) -> tuple[str, str]:
     """返回 (review_status, review_reason)"""
+    leak = detect_source_leak(source_text, body)
+    if leak.get("leaked"):
+        return "blocked", f"检测到正文连续复制知识库原文，最长重复约 {leak.get('longest_run', 0)} 个字符"
     guard = check_hallucination(source_text, body)
-    status = VERDICT_TO_STATUS.get(guard.get("verdict", "grounded"), "passed")
+    status = VERDICT_TO_STATUS.get(guard.get("verdict", ""), "needs_manual_review")
     return status, guard.get("reason", "")
 
 
 def _llm_reachable() -> bool:
-    """LLM 连通性冒烟测试。check_hallucination 是 fail-open（连不上会误判 grounded），先测一下避免误标 passed。"""
+    """LLM 连通性冒烟测试，避免审核失败时误标 passed。"""
     from adapters.llm_client import chat
 
     try:
@@ -91,10 +93,10 @@ def main() -> None:
                         )
                         stat["命中补源"] += 1
                     else:
-                        # 弱匹配：宁可标 skipped（仍显示）也不硬比导致误判 blocked
+                        # 弱匹配：没有可靠来源时必须拦截，不能进入学习者资料库。
                         source_text = ""
                         new_source = None
-                        stat["弱匹配跳过"] += 1
+                        stat["弱匹配拦截"] = stat.get("弱匹配拦截", 0) + 1
                 else:
                     source_text = ""
                     new_source = None
@@ -110,7 +112,7 @@ def main() -> None:
                 if new_source:
                     r.source_chunk_id, r.source_text, r.source_title, r.source_score = new_source
             else:
-                status, reason = "skipped", "知识库无匹配来源，未校验"
+                status, reason = "blocked", "知识库无可靠匹配来源，禁止进入正式资料库"
 
             stat[status] = stat.get(status, 0) + 1
             r.review_status = status

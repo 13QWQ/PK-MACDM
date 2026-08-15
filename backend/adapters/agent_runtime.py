@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
-from .guardrail import check_hallucination
+from .guardrail import check_hallucination, detect_unrequested_resource_type
 from .llm_client import chat, chat_json
 
 def _check_llm() -> bool:
@@ -252,17 +252,21 @@ class RAGEvidenceAgent:
         unmentioned = [s for s in all_role_skills if s not in matched_queries]
         # 全部岗位技能都检索（不再取前 N 个）
         all_queries = matched_queries + unmentioned
-        # 去重的 RAG 片段（按 title 去重）
-        seen_titles = set()
+        # 按 source_chunk_id 去重；同一岗位的切片往往共享 source_document，
+        # 不能按文件名去重，否则整个岗位只会保留一个知识片段。
+        seen_chunks = set()
         for skill in all_queries:
             # 用疑问模板增强查询语义匹配
             query_text = f"{target_job} {skill} 常见问题 核心知识点"
             hits = self.retriever.search(query_text, target_job, top_k=15)
             for hit in hits:
-                title = hit.get("title", "")
-                if title in seen_titles:
+                chunk_key = (
+                    str(hit.get("source_chunk_id") or hit.get("id") or "").strip()
+                    or f"{hit.get('title', '')}:{hit.get('content', '')[:80]}"
+                )
+                if chunk_key in seen_chunks:
                     continue
-                seen_titles.add(title)
+                seen_chunks.add(chunk_key)
                 profile.retrieval_hits.append(
                     {"query": skill, "job": target_job, **hit}
                 )
@@ -470,6 +474,14 @@ class ResourceAgent:
         self.retriever = retriever
 
     def run(self, knowledge_point: str, user_level: float, resource_type: str, target_job: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        if str(resource_type or "").strip() not in {"讲义", "练习", "案例"}:
+            return {
+                "content_type": str(resource_type or ""),
+                "title": f"{knowledge_point}学习资源",
+                "body": "当前资源类型未启用，本次不生成正式学习内容。",
+                "difficulty": 1,
+                "generation_method": "none",
+            }, []
         hits = self.retriever.search(f"{target_job} {knowledge_point}", target_job, top_k=10)
         if not hits:
             return {
@@ -497,7 +509,6 @@ class ResourceAgent:
             "讲义": f"你是「{target_job}」岗位的资深讲师，擅长将复杂概念拆解为清晰易懂的讲解。",
             "练习": f"你是「{target_job}」岗位的技术教练，擅长设计层层递进的实战练习。",
             "案例": f"你是「{target_job}」岗位的项目导师，擅长用真实案例讲解技术决策和问题解决。",
-            "视频脚本": f"你是「{target_job}」岗位的课程设计师，擅长编写结构清晰、引人入胜的教学脚本。",
         }
         persona = role_persona.get(resource_type, role_persona["讲义"])
 
@@ -512,12 +523,13 @@ class ResourceAgent:
 
 【生成要求】
 - 先列出检索片段中必须覆盖的关键概念（3-6 个），再逐一写入正文，不得遗漏
-- 讲义：学习目标 + 核心概念讲解 + 关键原理 + 自检问题
-- 练习：任务背景 + 具体步骤 + 参考提示 + 验收标准
-- 案例：项目背景 + 问题分析 + 解决方案 + 复盘要点
-- 视频脚本：开场引入 + 核心内容(3-4个要点) + 总结提问
+- 只生成当前请求的「{resource_type}」，不得追加其他资源类型章节
+- {"讲义：学习目标 + 核心概念讲解 + 关键原理 + 自检问题" if resource_type == "讲义" else "练习：任务背景 + 具体步骤 + 参考提示 + 验收标准" if resource_type == "练习" else "案例：项目背景 + 问题分析 + 解决方案 + 复盘要点"}
 
 必须基于知识库参考内容，不要编造知识库中没有的技术事实。
+- 知识库内容只用于内部参考，不得逐字复制参考资料，不得输出连续大段原文。
+- 不得输出“知识库参考资料”“依据片段”“参考原文”等内部检索标签。
+- 对参考资料进行重新组织、解释和教学化表达；如果无法完成改写，返回空 body，不要复制原文。
 
 请输出 JSON：{{"title": "标题", "body": "内容（先列出关键概念清单，再展开正文）", "difficulty": 1~5}}"""
 
@@ -525,28 +537,43 @@ class ResourceAgent:
         if not result:
             return self._run_rules(knowledge_point, user_level, resource_type, target_job, hits)
 
+        body = str(result.get("body", "") or "").strip()
+        if detect_unrequested_resource_type(body, resource_type).get("found"):
+            # 不把混入其他资源类型的正文当作合格资源，审核层会将其拦截。
+            return {
+                "content_type": resource_type,
+                "title": result.get("title", f"{knowledge_point}{resource_type}"),
+                "body": body,
+                "difficulty": min(5, max(1, int(result.get("difficulty", 2)))),
+                "generation_method": "llm",
+                "content_policy_blocked": True,
+            }, hits
+
         return {
             "content_type": resource_type,
             "title": result.get("title", f"{knowledge_point}{resource_type}"),
-            "body": result.get("body", ""),
+            "body": body,
             "difficulty": min(5, max(1, int(result.get("difficulty", 2)))),
             "generation_method": "llm",
         }, hits
 
     def _run_rules(self, knowledge_point: str, user_level: float, resource_type: str, target_job: str, hits: list) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Return a safe pending template when the external model is unavailable.
+
+        The old fallback inserted source_content directly into body. That made
+        a retrieval chunk appear as a finished learning resource. A rule
+        fallback may provide a task shell, but it must never expose the source.
+        """
         title = f"{knowledge_point}{resource_type}"
         difficulty = min(5, max(1, int(round(float(user_level or 0.2) * 5)) + (1 if resource_type == "练习" else 0)))
-        source = hits[0]
-        source_title = str(source.get("title") or source.get("filename") or "岗位知识库片段")
-        source_content = str(source.get("content") or "").strip()[:1600]
         if resource_type == "讲义":
-            body = f"学习目标：理解并能解释「{knowledge_point}」。\n\n知识库依据：{source_title}\n\n核心内容：\n{source_content}\n\n自检要求：用自己的话说明关键概念，并写出一个与目标岗位相关的使用场景。"
+            body = f"学习目标：理解并能解释「{knowledge_point}」。\n\n学习任务：\n1. 用自己的话定义该知识点。\n2. 说明它在「{target_job}」岗位中的使用场景。\n3. 写出一个最小示例，并记录输入、输出和异常情况。\n\n当前为待审核任务模板，外部模型完成生成并通过审核后才会进入资料库。"
         elif resource_type == "练习":
-            body = f"练习主题：{knowledge_point}\n\n参考依据：{source_title}\n\n任务：\n1. 从知识库片段中提取一个可验证的技术目标。\n2. 完成一个最小可运行示例。\n3. 记录输入、输出、异常处理和复盘结论。\n\n参考内容：\n{source_content}"
+            body = f"练习主题：{knowledge_point}\n\n任务：\n1. 将该知识点转化为一个可验证的岗位任务。\n2. 完成一个最小可运行示例。\n3. 记录输入、输出、异常处理和复盘结论。\n\n当前为待审核任务模板，外部模型完成生成并通过审核后才会进入资料库。"
         elif resource_type == "案例":
-            body = f"案例任务：围绕「{knowledge_point}」完成一次岗位化问题拆解。\n\n知识库依据：{source_title}\n\n案例材料：\n{source_content}\n\n交付物：方案说明、实现或原型、验证结果、问题复盘。"
+            body = f"案例任务：围绕「{knowledge_point}」完成一次岗位化问题拆解。\n\n交付物：问题定义、方案说明、实现或原型、验证结果、问题复盘。\n\n当前为待审核任务模板，外部模型完成生成并通过审核后才会进入资料库。"
         else:
-            body = f"讲解脚本：{knowledge_point}\n\n依据片段：{source_title}\n\n讲解内容：\n{source_content}\n\n结尾提问：请说明该知识点在目标岗位中的使用条件和常见误区。"
+            body = f"讲解脚本：{knowledge_point}\n\n结构：开场问题、概念解释、岗位场景、操作演示、总结提问。\n\n当前为待审核脚本模板，外部模型完成生成并通过审核后才会进入资料库。"
         return {"content_type": resource_type, "title": title, "body": body, "difficulty": difficulty, "generation_method": "rules"}, hits
 
 
@@ -631,9 +658,10 @@ class PathAgent:
 
         # 第二阶段：从所有技能中补足到 8 步（优先低分技能，跳过已在 phase1 中的）
         all_sorted = []
+        selected_skill_names = {item[1] for item in phase1}
         for dim, skills in dim_skills.items():
             for score, skill in skills:
-                if skill not in phase1:
+                if skill not in selected_skill_names:
                     all_sorted.append((score, skill, dim))
         all_sorted.sort(key=lambda x: x[0])
         remaining_needed = 8 - len(phase1)

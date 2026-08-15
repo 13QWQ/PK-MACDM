@@ -42,7 +42,7 @@ def review_resources(package_id: str, resources: list[dict]) -> list[dict]:
     verdict → status 映射：grounded→passed / partial→partial /
     ungrounded→blocked / needs_manual_review→needs_manual_review
     """
-    from .guardrail import check_hallucination
+    from .guardrail import check_hallucination, detect_source_leak, detect_unrequested_resource_type
 
     verdict_to_status = {
         "grounded": "passed",
@@ -54,14 +54,38 @@ def review_resources(package_id: str, resources: list[dict]) -> list[dict]:
     for r in resources:
         source_chunk_id = str(r.get("source_chunk_id") or "").strip()
         source_text = str(r.get("source_text") or "").strip()
-        if not source_chunk_id or not source_text:
+        body = str(r.get("body") or "").strip()
+        content_type = str(r.get("content_type") or "").strip()
+        if not source_chunk_id or not source_text or not body or not content_type:
             results.append({
                 "resource_id": r.get("resource_id", ""),
                 "status": "blocked",
-                "reason": "缺少 source_chunk_id 或来源原文，禁止进入正式资源包",
+                "reason": "缺少资源类型、source_chunk_id、来源原文或资源正文，禁止进入正式资源包",
             })
             continue
-        guard = check_hallucination(source_text, r.get("body", ""))
+
+        extra_type = detect_unrequested_resource_type(body, content_type)
+        if extra_type.get("found"):
+            results.append({
+                "resource_id": r.get("resource_id", ""),
+                "status": "blocked",
+                "reason": f"资源类型为{content_type}，但正文追加了未请求的{extra_type.get('type')}章节，已拦截",
+            })
+            continue
+
+        leak = detect_source_leak(source_text, body)
+        if leak.get("leaked"):
+            results.append({
+                "resource_id": r.get("resource_id", ""),
+                "status": "blocked",
+                "reason": (
+                    "检测到资源正文连续复制知识库原文，已拦截；"
+                    f"最长连续重复约 {leak.get('longest_run', 0)} 个字符"
+                ),
+            })
+            continue
+
+        guard = check_hallucination(source_text, body)
         results.append({
             "resource_id": r.get("resource_id", ""),
             "status": verdict_to_status.get(guard.get("verdict"), "needs_manual_review"),
