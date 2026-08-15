@@ -6,7 +6,8 @@ LLM 客户端（OpenAI 兼容接口）
     "base_url": "https://api.deepseek.com",
     "model": "deepseek-chat",
     "api_key": "sk-xxx",
-    "temperature": 0.7
+    "temperature": 0.7,
+    "trust_env": false
 }
 
 支持任意 OpenAI 兼容的 API 服务（DeepSeek / OpenAI / 阿里百炼 / 本地 vLLM 等），
@@ -20,6 +21,7 @@ import os
 import re
 import sys
 
+import httpx
 from openai import OpenAI
 
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "llm_config.json")
@@ -52,6 +54,10 @@ def _get_client() -> OpenAI:
     base_url = config.get("base_url", "https://api.deepseek.com")
     if not api_key:
         raise RuntimeError("llm_config.json 中 api_key 未配置")
+    # trust_env=false（默认）时直连、不走系统代理；true 时尊重系统代理（供 OpenAI 等需代理的 base_url 使用）
+    trust_env = bool(config.get("trust_env", False))
+    if not trust_env:
+        return OpenAI(api_key=api_key, base_url=base_url, http_client=httpx.Client(trust_env=False))
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
@@ -72,12 +78,12 @@ def chat(system_prompt: str, user_message: str, temperature: float | None = None
             temperature=temperature,
         )
         content = response.choices[0].message.content or ""
-        print(f"[LLM] ✓ {model} 返回 {len(content)} 字符", flush=True)
+        print(f"[LLM] OK {model} 返回 {len(content)} 字符", flush=True)
         return content
     except RuntimeError:
         raise
     except Exception as e:
-        print(f"[LLM] ✗ 调用失败 ({model}): {e}", file=sys.stderr, flush=True)
+        print(f"[LLM] 调用失败 ({model}): {e}", file=sys.stderr, flush=True)
         return ""
 
 
@@ -115,10 +121,10 @@ def chat_json(system_prompt: str, user_message: str) -> dict:
     # fallback: 正则提取
     match = re.search(r"\{[\s\S]*\}", text)
     if not match:
-        print(f"[LLM] ⚠ JSON 解析失败，未找到 {{...}}", file=sys.stderr, flush=True)
+        print(f"[LLM] JSON 解析失败，未找到 {{...}}", file=sys.stderr, flush=True)
         return {}
     try:
         return json.loads(match.group())
     except json.JSONDecodeError as e:
-        print(f"[LLM] ⚠ JSON 解析失败: {e}", file=sys.stderr, flush=True)
+        print(f"[LLM] JSON 解析失败: {e}", file=sys.stderr, flush=True)
         return {}

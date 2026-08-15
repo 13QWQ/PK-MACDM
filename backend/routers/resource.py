@@ -45,6 +45,7 @@ class ResourceResponse(BaseModel):
     source_score: float | None = None
     review_status: str | None = None
     review_reason: str | None = None
+    generation_method: str | None = None
     display_status: str = "show"
     created_at: datetime
 
@@ -66,16 +67,19 @@ def search_resources(
 def list_resources(
     knowledge_point: str | None = Query(None, description="按知识点过滤"),
     type: str | None = Query(None, alias="type", description="按资源类型过滤（讲义/练习/案例/视频脚本）"),
+    assessment_id: str | None = Query(None, description="按诊断记录过滤"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """获取资源列表，支持按知识点和类型过滤，按创建时间倒序"""
+    """获取资源列表，支持按知识点/类型/诊断记录过滤，按创建时间倒序"""
     q = db.query(Resource)
 
     if knowledge_point:
         q = q.filter(Resource.knowledge_point == knowledge_point)
     if type:
         q = q.filter(Resource.content_type == type)
+    if assessment_id:
+        q = q.filter(Resource.assessment_id == assessment_id)
 
     return q.order_by(Resource.created_at.desc()).all()
 

@@ -202,6 +202,7 @@ def submit_assessment(
             learning_path = LearningPath(
                 user_id=current_user.id,
                 job_id=assessment.job_id,
+                assessment_id=assessment.id,
                 steps=path_steps,
                 current_step=1,
                 status="active",
@@ -232,6 +233,7 @@ def submit_assessment(
                     gap_id=gap_id,
                 )
                 resource = Resource(
+                    assessment_id=assessment.id,
                     knowledge_point=gap,
                     content_type=generated["content_type"],
                     title=generated["title"],
@@ -241,6 +243,7 @@ def submit_assessment(
                     source_text=generated.get("source_text"),
                     source_title=generated.get("source_title"),
                     source_score=generated.get("source_score"),
+                    generation_method=generated.get("generation_method"),
                 )
                 db.add(resource)
                 resource_by_id[resource.id] = resource
@@ -309,11 +312,13 @@ def submit_assessment(
                                 gap_id=f"gap_fill_{_dim_name}",
                             )
                             resource = Resource(
+                                assessment_id=assessment.id,
                                 knowledge_point=_skill_name,
                                 content_type=generated["content_type"],
                                 title=generated["title"],
                                 body=generated["body"],
                                 difficulty=generated.get("difficulty"),
+                                generation_method=generated.get("generation_method"),
                             )
                             db.add(resource)
         print(f"[CHECK] 覆盖维度: {len(_covered_dims)}/{len(_low_dims)} 低分维度, 资源总数: {len(generated_resources)}", flush=True)

@@ -477,6 +477,7 @@ class ResourceAgent:
                 "title": f"{knowledge_point}{resource_type}",
                 "body": "当前岗位知识库未返回可用来源，本次不生成正式学习内容，请先检查 RAG 服务或补充知识库。",
                 "difficulty": min(5, max(1, int(round(float(user_level or 0.2) * 5)))),
+                "generation_method": "none",
             }, []
 
         if not _LLM_AVAILABLE:
@@ -529,6 +530,7 @@ class ResourceAgent:
             "title": result.get("title", f"{knowledge_point}{resource_type}"),
             "body": result.get("body", ""),
             "difficulty": min(5, max(1, int(result.get("difficulty", 2)))),
+            "generation_method": "llm",
         }, hits
 
     def _run_rules(self, knowledge_point: str, user_level: float, resource_type: str, target_job: str, hits: list) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -545,7 +547,7 @@ class ResourceAgent:
             body = f"案例任务：围绕「{knowledge_point}」完成一次岗位化问题拆解。\n\n知识库依据：{source_title}\n\n案例材料：\n{source_content}\n\n交付物：方案说明、实现或原型、验证结果、问题复盘。"
         else:
             body = f"讲解脚本：{knowledge_point}\n\n依据片段：{source_title}\n\n讲解内容：\n{source_content}\n\n结尾提问：请说明该知识点在目标岗位中的使用条件和常见误区。"
-        return {"content_type": resource_type, "title": title, "body": body, "difficulty": difficulty}, hits
+        return {"content_type": resource_type, "title": title, "body": body, "difficulty": difficulty, "generation_method": "rules"}, hits
 
 
 class PathAgent:

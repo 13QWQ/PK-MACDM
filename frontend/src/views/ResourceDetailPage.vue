@@ -11,6 +11,8 @@
           难度：
           <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= resource.difficulty }">★</span>
         </span>
+        <span v-if="resource.generation_method === 'llm'" class="method-tag method-llm">AI 生成</span>
+        <span v-else-if="resource.generation_method === 'rules'" class="method-tag method-rules">规则兜底生成</span>
       </p>
     </section>
 
@@ -141,6 +143,23 @@ const renderedBody = computed(() => {
   color: #16a34a;
   border-radius: 4px;
   font-size: 12px;
+}
+
+.method-tag {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.method-llm {
+  background: #eef2ff;
+  color: #2563eb;
+}
+
+.method-rules {
+  background: #fffbeb;
+  color: #b45309;
 }
 
 .diff-stars { font-size: 13px; color: #888; }

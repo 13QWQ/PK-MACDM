@@ -12,6 +12,7 @@ export interface ResourceInfo {
   review_status: string | null
   review_reason: string | null
   display_status: string
+  generation_method: string | null
   created_at: string
 }
 
@@ -19,6 +20,7 @@ export interface ResourceInfo {
 export function getResourceList(params?: {
   knowledge_point?: string
   type?: string
+  assessment_id?: string
 }): Promise<ResourceInfo[]> {
   return request.get('/resource/list', { params }) as any
 }

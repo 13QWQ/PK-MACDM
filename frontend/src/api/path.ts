@@ -16,6 +16,7 @@ export interface LearningPathInfo {
   id: string
   user_id: string
   job_id: string
+  assessment_id: string | null
   steps: PathStep[]
   current_step: number
   status: string

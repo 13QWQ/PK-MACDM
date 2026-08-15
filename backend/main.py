@@ -33,7 +33,10 @@ _ensure_columns("resources", {
     "source_score": "DECIMAL(6, 4)",
     "review_status": "VARCHAR(20)",
     "review_reason": "TEXT",
+    "generation_method": "VARCHAR(20)",
+    "assessment_id": "VARCHAR(36)",
 })
+_ensure_columns("learning_paths", {"assessment_id": "VARCHAR(36)"})
 
 # ─── 种子数据：4个职业 ──────────────────────────────────
 

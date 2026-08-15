@@ -38,6 +38,7 @@ class LearningPathResponse(BaseModel):
     id: str
     user_id: str
     job_id: str
+    assessment_id: str | None = None
     steps: list[PathStep] | None = None
     current_step: int
     status: str
@@ -47,7 +48,7 @@ class LearningPathResponse(BaseModel):
 
 # ===== 工具函数 =====
 
-def _enrich_steps(steps: list[dict], user_id: str, target_job: str, db: Session) -> list[dict]:
+def _enrich_steps(steps: list[dict], user_id: str, target_job: str, db: Session, assessment_id: str | None = None) -> list[dict]:
     """为每个 step 补上 resource_id、status、record_id、weight"""
     if not steps:
         return steps
@@ -56,16 +57,17 @@ def _enrich_steps(steps: list[dict], user_id: str, target_job: str, db: Session)
         # 知识点 → 维度 → 岗位权重
         s["weight"] = get_weight_for_knowledge(s["knowledge_point"], target_job)
 
-        # 查 resource_id
-        resource = (
+        # 查 resource_id（按诊断隔离：优先匹配本诊断的资源）
+        q = (
             db.query(Resource)
             .filter(
                 Resource.knowledge_point == s["knowledge_point"],
                 Resource.content_type == s["resource_type"],
             )
-            .order_by(Resource.created_at.desc())
-            .first()
         )
+        if assessment_id:
+            q = q.filter(Resource.assessment_id == assessment_id)
+        resource = q.order_by(Resource.created_at.desc()).first()
         s["resource_id"] = resource.id if resource else None
 
         # 查学习状态
@@ -109,6 +111,6 @@ def get_learning_paths(
         if path.steps:
             job = db.query(Job).filter(Job.id == path.job_id).first()
             target_job = job.job_title if job else ""
-            path.steps = _enrich_steps(path.steps, user_id, target_job, db)
+            path.steps = _enrich_steps(path.steps, user_id, target_job, db, path.assessment_id)
 
     return paths

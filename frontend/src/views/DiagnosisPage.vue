@@ -451,8 +451,8 @@ async function loadPath() {
   pathLoading.value = true
   try {
     const paths = await getLearningPaths(store.userInfo.id)
-    // 匹配当前诊断对应岗位的路径
-    currentPath.value = paths.find(p => p.job_id === assessment.value!.job_id) || null
+    // 匹配当前诊断对应的路径（按 assessment_id 精确隔离）
+    currentPath.value = paths.find(p => p.assessment_id === assessment.value!.id) || null
   } catch {
     currentPath.value = null
   } finally {
@@ -469,7 +469,8 @@ async function loadResources() {
   if (!assessment.value) return
   resourceLoading.value = true
   try {
-    const all = await getResourceList()
+    // 后端按 assessment_id 隔离，只拉当前这次诊断的资源
+    const all = await getResourceList({ assessment_id: assessment.value.id })
     // 用路径的知识点过滤资源（资源是按路径知识点生成的，两者天然对齐）
     const pathPoints = new Set(
       currentPath.value?.steps?.map(s => s.knowledge_point) || []
