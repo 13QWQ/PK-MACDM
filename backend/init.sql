@@ -80,8 +80,17 @@ CREATE TABLE IF NOT EXISTS resources (
     title VARCHAR(200) NOT NULL,
     body TEXT NOT NULL,
     difficulty INT CHECK (difficulty BETWEEN 1 AND 5),
+    source_chunk_id VARCHAR(100),
+    source_text TEXT,
+    source_title VARCHAR(255),
+    source_score DECIMAL(6,4),
+    review_status VARCHAR(20),
+    review_reason TEXT,
+    is_legacy TINYINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_knowledge_point (knowledge_point)
+    INDEX idx_knowledge_point (knowledge_point),
+    INDEX idx_source_chunk_id (source_chunk_id),
+    INDEX idx_review_status (review_status)
 );
 
 -- 学习记录表

@@ -80,10 +80,11 @@ def main() -> None:
                     top = hits[0]
                     score = float(top.get("score", 0.0) or 0.0)
                     scores.append(score)
-                    if score >= SCORE_THRESHOLD:
+                    source_chunk_id = str(top.get("source_chunk_id") or "").strip()
+                    if score >= SCORE_THRESHOLD and source_chunk_id:
                         source_text = str(top.get("content", ""))[:1500]
                         new_source = (
-                            str(top.get("id", "")),
+                            source_chunk_id,
                             source_text,
                             str(top.get("title", "")),
                             score,

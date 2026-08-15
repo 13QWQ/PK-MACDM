@@ -24,7 +24,11 @@ GUARD_SYSTEM = """你是一个严谨的事实核查助手。请判断【AI 回�
 def check_hallucination(context_text: str, response_text: str) -> dict:
     """用 LLM 校验 response 是否忠实于 context，返回 {"verdict", "has_hallucination", "reason"}"""
     if not context_text or not response_text:
-        return {"verdict": "grounded", "has_hallucination": False, "reason": "无上下文或回答为空，跳过校验"}
+        return {
+            "verdict": "needs_manual_review",
+            "has_hallucination": True,
+            "reason": "缺少参考原文或待审核回答，无法完成防幻觉校验",
+        }
 
     user_msg = f"""【参考文档】
 {context_text[:4000]}
@@ -35,15 +39,26 @@ def check_hallucination(context_text: str, response_text: str) -> dict:
     try:
         result = chat_json(GUARD_SYSTEM, user_msg)
         if not result:
-            return {"verdict": "grounded", "has_hallucination": False, "reason": "LLM 校验未返回有效结果，放行"}
-        verdict = str(result.get("verdict", "grounded")).lower()
+            return {
+                "verdict": "needs_manual_review",
+                "has_hallucination": True,
+                "reason": "LLM 校验未返回有效结果，禁止自动放行",
+            }
+        verdict = str(result.get("verdict", "")).lower().strip()
         if verdict not in ("grounded", "partial", "ungrounded"):
-            # 兼容旧格式：无 verdict 时按 has_hallucination 推导
-            verdict = "ungrounded" if result.get("has_hallucination") else "grounded"
+            return {
+                "verdict": "needs_manual_review",
+                "has_hallucination": True,
+                "reason": "LLM 返回的审核 verdict 无法解析，禁止自动放行",
+            }
         return {
             "verdict": verdict,
             "has_hallucination": verdict != "grounded",
             "reason": str(result.get("reason", "LLM 校验完成")),
         }
     except Exception as e:
-        return {"verdict": "grounded", "has_hallucination": False, "reason": f"LLM 校验异常 ({e})，放行"}
+        return {
+            "verdict": "needs_manual_review",
+            "has_hallucination": True,
+            "reason": f"LLM 校验异常 ({e})，已转人工复核",
+        }

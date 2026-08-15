@@ -19,8 +19,11 @@ JOB_CAREER_MAP: dict[str, str] = {
 }
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(__file__))
-_QDRANT_PATH = os.path.join(_BACKEND_DIR, "qdrant_storage")
-_MODEL_PATH = os.path.join(_BACKEND_DIR, "bge-m3")
+_QDRANT_PATH = os.getenv("QDRANT_PATH", os.path.join(_BACKEND_DIR, "qdrant_storage"))
+_QDRANT_URL = os.getenv("QDRANT_URL", "").strip()
+_QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "").strip() or None
+_QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "career_knowledge_v1")
+_MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", os.path.join(_BACKEND_DIR, "bge-m3"))
 
 _client = None
 _model = None
@@ -49,10 +52,13 @@ def _ensure_imports() -> bool:
 
 
 def _get_client():
-    """获取或创建 Qdrant 本地客户端（单例）"""
+    """获取 Qdrant 客户端：配置 URL 时使用服务模式，否则使用本地文件模式。"""
     global _client
     if _client is None:
-        _client = QdrantClient(path=_QDRANT_PATH)
+        if _QDRANT_URL:
+            _client = QdrantClient(url=_QDRANT_URL, api_key=_QDRANT_API_KEY)
+        else:
+            _client = QdrantClient(path=_QDRANT_PATH)
     return _client
 
 
@@ -64,6 +70,39 @@ def _get_model():
     return _model
 
 
+def _serialize_hit(hit) -> dict:
+    """将 Qdrant 点转换为统一的知识库来源结构。
+
+    `point_id` 是 Qdrant 的内部存储 ID，不能作为业务来源 ID；
+    `source_chunk_id` 必须来自知识库 payload，供资源审核和页面追溯。
+    """
+    payload = hit.payload or {}
+    source_chunk_id = str(payload.get("source_chunk_id") or "").strip()
+    content = str(payload.get("content") or "")
+    try:
+        score = round(float(hit.score), 2)
+    except (TypeError, ValueError):
+        score = 0.0
+
+    candidate_requirement_ids = payload.get("candidate_requirement_ids") or []
+    if not isinstance(candidate_requirement_ids, list):
+        candidate_requirement_ids = [str(candidate_requirement_ids)]
+
+    return {
+        # 兼容旧调用方，但不再把 Qdrant point ID 当作业务 ID。
+        "id": source_chunk_id,
+        "source_chunk_id": source_chunk_id,
+        "parent_source_chunk_id": str(payload.get("parent_source_chunk_id") or ""),
+        "point_id": str(hit.id),
+        "career_id": str(payload.get("career_id") or ""),
+        "candidate_requirement_ids": [str(x) for x in candidate_requirement_ids],
+        "review_status": str(payload.get("review_status") or ""),
+        "title": str(payload.get("source_document") or ""),
+        "content": content,
+        "score": score,
+    }
+
+
 def search_similar_resources(query: str, job: str = "产品经理", top_k: int = 5) -> list:
     """
     相似资源检索（向量检索）
@@ -73,14 +112,7 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
         job: 目标岗位（用于过滤对应岗位的知识库）
         top_k: 返回数量
 
-    输出：
-        [
-            {
-                "title": "xxx.txt",
-                "content": "文档内容...",
-                "score": 0.95
-            }
-        ]
+    输出：包含 `source_chunk_id`、原文、岗位、审核状态和检索分数的来源对象。
 
     如果 qdrant-client/FlagEmbedding 未安装、模型未下载、或岗位未配置，返回空列表。
     """
@@ -98,7 +130,7 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
         query_vec = model.encode([query], return_dense=True)["dense_vecs"][0].tolist()
 
         response = client.query_points(
-            collection_name="career_knowledge_v1",
+            collection_name=_QDRANT_COLLECTION,
             query=query_vec,
             query_filter=Filter(must=[
                 FieldCondition(key="career_id", match=MatchValue(value=career_id)),
@@ -107,15 +139,7 @@ def search_similar_resources(query: str, job: str = "产品经理", top_k: int =
             limit=top_k,
         )
 
-        result_list = []
-        for hit in response.points:
-            payload = hit.payload or {}
-            result_list.append({
-                "title": payload.get("source_document", ""),
-                "content": payload.get("content", ""),
-                "score": round(float(hit.score), 2),
-                "id": str(hit.id),
-            })
+        result_list = [_serialize_hit(hit) for hit in response.points]
         return result_list
     except Exception:
         return []
@@ -128,7 +152,7 @@ def search_all_careers(query: str, top_k: int = 3) -> list:
     与 search_similar_resources 同逻辑，但不按 career_id 过滤，
     仅保留 review_status == "ready_for_reembedding" 的质量过滤。
 
-    返回结构同 search_similar_resources：[{"title","content","score","id"}]
+    返回结构同 search_similar_resources，`source_chunk_id` 仍必须来自 payload。
     """
     if not _ensure_imports():
         return []
@@ -140,7 +164,7 @@ def search_all_careers(query: str, top_k: int = 3) -> list:
         query_vec = model.encode([query], return_dense=True)["dense_vecs"][0].tolist()
 
         response = client.query_points(
-            collection_name="career_knowledge_v1",
+            collection_name=_QDRANT_COLLECTION,
             query=query_vec,
             query_filter=Filter(must=[
                 FieldCondition(key="review_status", match=MatchValue(value="ready_for_reembedding")),
@@ -148,15 +172,7 @@ def search_all_careers(query: str, top_k: int = 3) -> list:
             limit=top_k,
         )
 
-        result_list = []
-        for hit in response.points:
-            payload = hit.payload or {}
-            result_list.append({
-                "title": payload.get("source_document", ""),
-                "content": payload.get("content", ""),
-                "score": round(float(hit.score), 2),
-                "id": str(hit.id),
-            })
+        result_list = [_serialize_hit(hit) for hit in response.points]
         return result_list
     except Exception:
         return []

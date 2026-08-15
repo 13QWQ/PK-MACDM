@@ -23,6 +23,9 @@ class SearchResult(BaseModel):
     title: str
     content: str
     score: float
+    source_chunk_id: str | None = None
+    parent_source_chunk_id: str | None = None
+    career_id: str | None = None
 
 
 class SearchResponse(BaseModel):

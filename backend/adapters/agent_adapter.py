@@ -39,25 +39,32 @@ def plan_learning_path(user_id: str, target_job: str, current_ability: list) -> 
 def review_resources(package_id: str, resources: list[dict]) -> list[dict]:
     """层2：逐条资源做知识库校验（防幻觉），返回每条的校验结论。
 
-    verdict → status 映射：grounded→passed / partial→partial / ungrounded→blocked / 无来源→skipped
+    verdict → status 映射：grounded→passed / partial→partial /
+    ungrounded→blocked / needs_manual_review→needs_manual_review
     """
     from .guardrail import check_hallucination
 
-    verdict_to_status = {"grounded": "passed", "partial": "partial", "ungrounded": "blocked"}
+    verdict_to_status = {
+        "grounded": "passed",
+        "partial": "partial",
+        "ungrounded": "blocked",
+        "needs_manual_review": "needs_manual_review",
+    }
     results = []
     for r in resources:
-        source_text = r.get("source_text", "")
-        if not source_text:
+        source_chunk_id = str(r.get("source_chunk_id") or "").strip()
+        source_text = str(r.get("source_text") or "").strip()
+        if not source_chunk_id or not source_text:
             results.append({
                 "resource_id": r.get("resource_id", ""),
-                "status": "skipped",
-                "reason": "无知识库来源，跳过校验",
+                "status": "blocked",
+                "reason": "缺少 source_chunk_id 或来源原文，禁止进入正式资源包",
             })
             continue
         guard = check_hallucination(source_text, r.get("body", ""))
         results.append({
             "resource_id": r.get("resource_id", ""),
-            "status": verdict_to_status.get(guard.get("verdict", "grounded"), "passed"),
+            "status": verdict_to_status.get(guard.get("verdict"), "needs_manual_review"),
             "reason": guard.get("reason", ""),
         })
     return results

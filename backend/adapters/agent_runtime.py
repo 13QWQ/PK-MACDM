@@ -149,8 +149,7 @@ class BackendVectorRetriever:
 
             return search_similar_resources(query=query, job=job, top_k=top_k)
         except Exception:
-            # The backend already defines empty-result degradation when Ollama
-            # is unavailable.  Keep this layer equally non-fatal.
+            # 检索异常允许规则链继续运行，但空结果不能被伪装成有知识库依据。
             return []
 
 
@@ -740,26 +739,47 @@ class AgentRuntime:
             role = "后端开发工程师"
         events: list[AgentEvent] = []
         resource, hits = ResourceAgent(self.retriever).run(knowledge_point, user_level, resource_type, role)
+        source = next(
+            (
+                hit for hit in hits
+                if str(hit.get("source_chunk_id") or "").strip()
+                and str(hit.get("content") or "").strip()
+            ),
+            None,
+        )
         events.append(AgentEvent(
             name=ResourceAgent.name,
-            status="completed" if hits else "blocked",
+            status="completed" if source else "blocked",
             input_summary=f"针对 {role} 的「{knowledge_point}」生成{resource_type}。",
-            output_summary="已绑定现有岗位知识库片段。" if hits else "没有知识库来源，禁止生成正式内容。",
-            confidence=0.86 if hits else 0.15,
-            review_result="approved" if hits else "blocked",
+            output_summary=(
+                "已绑定现有岗位知识库片段。"
+                if source
+                else "没有可追溯的 source_chunk_id 和原文，禁止生成正式内容。"
+            ),
+            confidence=0.86 if source else 0.15,
+            review_result="pending" if source else "blocked",
         ))
         self.last_trace = {
             "trace_id": f"trace_{uuid4().hex[:12]}",
             "target_job": role,
             "agents": [event.__dict__ for event in events],
             "retrieval_sources": hits,
-            "review": {"approved": bool(hits), "errors": [] if hits else ["知识库无可用来源"]},
+            "review": {
+                "approved": bool(source),
+                "errors": [] if source else ["知识库无可追溯来源"],
+            },
         }
-        if hits:
-            resource["source_chunk_id"] = str(hits[0].get("id", ""))
-            resource["source_text"] = str(hits[0].get("content", ""))[:1500]
-            resource["source_title"] = str(hits[0].get("title", ""))
-            resource["source_score"] = float(hits[0].get("score", 0.0) or 0.0)
+        if source:
+            resource["source_chunk_id"] = str(source["source_chunk_id"])
+            resource["source_text"] = str(source["content"])[:1500]
+            resource["source_title"] = str(source.get("title", ""))
+            resource["source_score"] = float(source.get("score", 0.0) or 0.0)
+        else:
+            resource["source_chunk_id"] = ""
+            resource["source_text"] = ""
+            resource["source_title"] = ""
+            resource["source_score"] = 0.0
+            resource["generation_status"] = "blocked"
         return resource
 
     def plan_learning_path(self, user_id: str, target_job: str, current_ability: list[float]) -> list[dict[str, Any]]:
