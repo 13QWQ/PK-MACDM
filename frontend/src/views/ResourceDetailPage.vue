@@ -72,9 +72,17 @@ async function loadResource() {
 onMounted(() => loadResource())
 watch(() => route.params.id, () => loadResource())
 
+// 剥掉正文里嵌入的切片元数据行（ID：/ 难度：），其余内容原样保留
+function cleanBody(body: string): string {
+  return body
+    .split('\n')
+    .filter(line => !/^(ID|难度)[：:]/.test(line.trim()))
+    .join('\n')
+}
+
 const renderedBody = computed(() => {
   if (!resource.value) return ''
-  return marked(resource.value.body) as string
+  return marked(cleanBody(resource.value.body)) as string
 })
 </script>
 

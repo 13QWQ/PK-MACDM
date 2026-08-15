@@ -528,9 +528,9 @@ const resourceValidationStats = computed(() => {
   }
 })
 
-// 展示层过滤掉被拦截（blocked）的资源；统计仍基于完整 resources
+// 展示层过滤掉被拦截（blocked）和隐藏（hide）的资源；统计仍基于完整 resources
 const visibleResources = computed(() =>
-  resources.value.filter(r => r.review_status !== 'blocked'),
+  resources.value.filter(r => r.review_status !== 'blocked' && r.display_status !== 'hide'),
 )
 
 function formatPathTime(iso: string): string {

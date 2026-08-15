@@ -11,6 +11,7 @@ export interface ResourceInfo {
   source_text: string | null
   review_status: string | null
   review_reason: string | null
+  display_status: string
   created_at: string
 }
 
