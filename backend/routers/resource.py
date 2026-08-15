@@ -45,6 +45,7 @@ class ResourceResponse(BaseModel):
     source_score: float | None = None
     review_status: str | None = None
     review_reason: str | None = None
+    display_status: str = "show"
     created_at: datetime
 
 

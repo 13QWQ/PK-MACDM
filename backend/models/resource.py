@@ -23,3 +23,8 @@ class Resource(Base):
     review_reason = Column(Text, nullable=True)  # 校验结论 / 幻觉原因
     is_legacy = Column(Integer, default=0)  # 1=旧数据信任（视为有依据，待以后重新判定），仅后端隔离用
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def display_status(self) -> str:
+        """展示状态：hide=前端不展示，show=正常展示。视频脚本默认不展示。"""
+        return "hide" if (self.content_type or "") == "视频脚本" else "show"
