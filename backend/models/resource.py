@@ -32,7 +32,9 @@ class Resource(Base):
         normalized_type = str(self.content_type or "").strip().lower()
         if normalized_type in {"视频脚本", "video_script", "video script", "视频"}:
             return "hide"
-        if self.review_status != "passed":
+        # partial 表示有来源且大部分内容有依据，作为“待复核资料”可展示；
+        # 无依据、审核异常或缺少来源的资源仍然必须隐藏。
+        if self.review_status not in {"passed", "partial"}:
             return "hide"
         if not str(self.source_chunk_id or "").strip() or not str(self.source_text or "").strip():
             return "hide"

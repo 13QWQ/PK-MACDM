@@ -65,7 +65,7 @@ def search_resources(
 @router.get("/list", response_model=list[ResourceResponse])
 def list_resources(
     knowledge_point: str | None = Query(None, description="按知识点过滤"),
-    type: str | None = Query(None, alias="type", description="按资源类型过滤（讲义/练习/案例/视频脚本）"),
+    type: str | None = Query(None, alias="type", description="按资源类型过滤（讲义/练习/案例）"),
     assessment_id: str | None = Query(None, description="按诊断记录过滤"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -76,7 +76,7 @@ def list_resources(
     非历史旧资源的内容才允许从这个面向学习者的接口返回。
     """
     q = db.query(Resource).filter(
-        Resource.review_status == "passed",
+        Resource.review_status.in_(["passed", "partial"]),
         Resource.source_chunk_id.isnot(None),
         Resource.source_text.isnot(None),
         Resource.is_legacy == 0,
@@ -107,7 +107,7 @@ def get_resource(
     """查询已审核通过的学习资源详情，不暴露被拦截或旧资源。"""
     resource = db.query(Resource).filter(
         Resource.id == resource_id,
-        Resource.review_status == "passed",
+        Resource.review_status.in_(["passed", "partial"]),
         Resource.source_chunk_id.isnot(None),
         Resource.source_text.isnot(None),
         Resource.is_legacy == 0,

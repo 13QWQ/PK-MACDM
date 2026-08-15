@@ -64,7 +64,7 @@ def _enrich_steps(steps: list[dict], user_id: str, target_job: str, db: Session,
             .filter(
                 Resource.knowledge_point == s["knowledge_point"],
                 Resource.content_type == s["resource_type"],
-                Resource.review_status == "passed",
+                Resource.review_status.in_(["passed", "partial"]),
                 Resource.source_chunk_id.isnot(None),
                 Resource.source_text.isnot(None),
                 Resource.is_legacy == 0,

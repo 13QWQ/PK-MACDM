@@ -175,6 +175,13 @@ def _query_terms(text: str) -> set[str]:
     return {term for term in terms if len(term) >= 2}
 
 
+_LEXICAL_STOP_TERMS = {
+    "后端", "开发", "工程", "工程师", "前端", "运维", "产品", "经理",
+    "常见", "问题", "核心", "知识", "知识点", "岗位", "学习", "什么",
+    "作用", "原理", "如何", "以及", "分别", "哪些", "是否", "可以",
+}
+
+
 def _lexical_search(query: str, career_id: str | None, top_k: int) -> list[dict]:
     """Return source-traceable lexical matches when vector retrieval is unavailable."""
     terms = _query_terms(query)
@@ -182,6 +189,9 @@ def _lexical_search(query: str, career_id: str | None, top_k: int) -> list[dict]
         return []
 
     normalized_query = re.sub(r"\s+", "", str(query or "").lower())
+    specific_terms = {term for term in terms if term not in _LEXICAL_STOP_TERMS}
+    if not specific_terms:
+        specific_terms = terms
     scored: list[tuple[float, dict]] = []
     for record in _load_lexical_records():
         if career_id and record["career_id"] != career_id:
@@ -189,12 +199,15 @@ def _lexical_search(query: str, career_id: str | None, top_k: int) -> list[dict]
         searchable = re.sub(
             r"\s+", "", f"{record['title']} {record['content']}".lower()
         )
-        matches = {term for term in terms if term in searchable}
-        if not matches:
+        metadata = " ".join(record.get("candidate_requirement_ids") or []).lower()
+        content_matches = {term for term in specific_terms if term in searchable}
+        metadata_matches = {term for term in specific_terms if term in metadata}
+        if not content_matches and not metadata_matches:
             continue
-        coverage = len(matches) / max(1, len(terms))
+        content_coverage = len(content_matches) / max(1, len(specific_terms))
+        metadata_coverage = len(metadata_matches) / max(1, len(specific_terms))
         exact_bonus = 0.15 if normalized_query and normalized_query in searchable else 0.0
-        score = min(0.99, 0.35 + 0.45 * coverage + exact_bonus)
+        score = min(0.99, 0.30 + 0.45 * content_coverage + 0.35 * metadata_coverage + exact_bonus)
         scored.append((score, record))
 
     scored.sort(key=lambda item: item[0], reverse=True)
