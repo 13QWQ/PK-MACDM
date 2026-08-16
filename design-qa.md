@@ -20,7 +20,7 @@
 
 - 首页 V3：`design-qa-assets/final-home-v3-reference-comparison.png`
 - 资料审查：`design-qa-assets/compare-review-side-by-side.png`
-- 能力诊断 Liquid Glass V3：`design-qa-assets/final-diagnosis-liquid-v3-reference-comparison.png`
+- 能力诊断 Diagnostic Console V4：`design-qa-assets/final-diagnosis-console-v4-reference-comparison.png`
 - 资料库 Hero：`design-qa-assets/final-library-cube-v3-reference-comparison.png`
 
 每张对照图左侧为参考图、右侧为实际运行页面；首页与能力诊断采用 1680 × 945 主验收视口，资料审查与资料库采用 1920 × 1080 主验收视口，并等比例缩放到同一画布。
@@ -51,9 +51,10 @@
 
 - 通过：真实空状态不展示伪造分数，明确引导用户先完成资料审查。
 - 通过：完整数据态展示综合分、Radar、五维得分、证据置信度、真实结果准确率、Agent 结论和学习路径。
-- 通过：中央 Diagnostic Core 采用外层透明轮廓、内层半透明面板、边缘折射、流动反光和底部接触光六层结构，背景轨道与平台光可以受控透入，主卡不再呈现为实体白卡。
-- 通过：综合分圆环与 Radar 使用透明网格、分层填充和低强度高光，形成悬浮 Holo Chart；左右侧栏及下方结果区使用更弱的玻璃材质，保持“中央最强、两侧次之、下方最弱”的清晰层级。
-- 通过：1366、1440、1680、1920 四档桌面宽度下，左右侧栏与中央 Core 的安全间距分别为 17.1、18、21、22 px，无重叠、裁切或水平溢出。
+- 通过：中央 Diagnostic Core 采用外层透明轮廓、内层半透明面板、边缘折射、指针反光和底部接触光六层结构；平台素材透明度收敛至 24%，绿色仅保留在进度、图形轮廓与底部环境折射，不再形成大面积雾团。
+- 通过：综合得分改为 ECharts 三层 Gauge，区分外玻璃环、进度环与内层刻度；能力雷达改为五层网格、双层 Polygon、中心高亮与独立轮廓光，Score 为强焦点、Radar 为主要分析图。
+- 通过：中央面板内部按 `Score / Divider / Radar` 形成明确主控台结构，底部评估时间、证据数、诊断状态和 DEV 标记统一进入轻量状态栏；左右侧栏及下方结果区使用更弱的玻璃材质。
+- 通过：1366、1440、1680、1920 四档桌面宽度下，左右侧栏与中央 Core 的安全间距分别为 17.1、18、21、22 px，中央 Glass 宽度分别为 660.9、733、780、780 px，无重叠、裁切或水平溢出。
 - 通过：开发演示数据仅在公开预览构建的 `?demo=1` 中可用，正式构建始终读取真实 API。
 
 ### 4.5 资料库
@@ -110,6 +111,6 @@
 7. 最终运行截图：`final-home-1920x1080.png`、`final-diagnosis-1920x1080.png`、`final-review-1920x1080.png`、`final-library-1920x1080.png`；浏览器 warning/error 为 0 条。
 8. V3 首页构图收敛：Hero 压缩为 408 px，Hub 扩展为 60% 主视觉，四张 Spatial Card 建立不同尺寸、透视与前后关系；最终同屏对照为 `final-home-v3-reference-comparison.png`。
 9. 资料库 Hero 专项修复：生成完整空间立方体素材并建立独立 `contain` 展示舞台。1366 × 768 下图像边界为 `(699, 319.9, 335 × 272)`、Hero 边界为 `(286, 290.9, 775 × 330)`；1680 × 945 下图像边界为 `(864.4, 328.2, 483.6 × 279)`、Hero 边界为 `(286, 299.2, 1089 × 337)`，两档均完整位于 Hero 内。
-10. 能力诊断 Liquid Glass 专项修复：中央主控台由单层白卡升级为多层透明玻璃结构，增加液态边缘、角落高光、环境折射、悬浮接触光及指针反光；最终同屏对照为 `final-diagnosis-liquid-v3-reference-comparison.png`。
+10. 能力诊断主控台 V4 定向重做：重新划分 Score 与 Radar 模块，以 ECharts 三层 Gauge 和双层 Holographic Radar 取代原单层图表；降低平台绿光与玻璃饱和度，保留透明边缘、悬浮接触光和受控环境折射。最终同屏对照为 `final-diagnosis-console-v4-reference-comparison.png`。
 
 final result: passed

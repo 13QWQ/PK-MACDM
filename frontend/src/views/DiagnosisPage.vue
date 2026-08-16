@@ -38,9 +38,22 @@
           <article class="diagnostic-core" @pointermove="moveSpotlight" @pointerleave="resetSpotlight">
             <img class="diagnostic-platform" src="/assets/diagnostic-platform.png" alt="绿色玻璃质感的能力诊断空间平台" />
             <div class="core-glass glass-surface">
-              <div class="core-topline"><span>综合得分</span><span>能力雷达图</span></div>
-              <div class="core-body"><div class="score-dial" :style="{ '--score': `${overallPercent * 3.6}deg` }"><div><b class="gradient-number">{{ overallPercent }}</b><small>/100</small><em>{{ levelText }}</em></div></div><div ref="radarRef" class="radar-chart"></div></div>
-              <div class="core-meta"><span>评估于 {{ formattedDate }}</span><span>·</span><span>{{ traceLabel }}</span><span v-if="demoMode" class="demo-badge">DEV 示例</span></div>
+              <div class="core-body">
+                <section class="score-module">
+                  <div class="core-module-heading"><span>综合得分</span><small>OVERALL SCORE</small></div>
+                  <div class="score-gauge-shell">
+                    <div ref="scoreRef" class="score-gauge"></div>
+                    <div class="score-value"><b>{{ overallPercent }}</b><span>/100</span></div>
+                  </div>
+                  <div class="score-verdict"><i></i><span>{{ levelText }}</span></div>
+                </section>
+                <span class="core-separator" aria-hidden="true"></span>
+                <section class="radar-module">
+                  <div class="core-module-heading"><span>能力雷达图</span><small>{{ assessment.ability_vector?.length || 0 }} DIMENSIONS</small></div>
+                  <div ref="radarRef" class="radar-chart"></div>
+                </section>
+              </div>
+              <div class="core-meta"><span>评估于 {{ formattedDate }}</span><span>{{ traceLabel }}</span><span class="core-status"><i></i>诊断完成</span><span v-if="demoMode" class="demo-badge">DEV 示例</span></div>
             </div>
           </article>
 
@@ -88,7 +101,7 @@ const route = useRoute(); const router = useRouter(); const store = useUserStore
 const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const demoMode = computed(() => publicPreview && route.query.demo === '1')
 const assessment = ref<AssessmentResponse | null>(null); const loading = ref(false); const loadError = ref(''); const progress = ref({ label: '正在解析学习情况', percent: 0 }); const running = ref(false)
-const radarRef = ref<HTMLDivElement | null>(null); let chart: echarts.ECharts | null = null; let progressTimer: number | null = null
+const radarRef = ref<HTMLDivElement | null>(null); const scoreRef = ref<HTMLDivElement | null>(null); let chart: echarts.ECharts | null = null; let scoreChart: echarts.ECharts | null = null; let progressTimer: number | null = null
 const currentPath = ref<LearningPathInfo | null>(null); const pathLoading = ref(false); const resources = ref<ResourceInfo[]>([]); const traceSourceCount = ref(0)
 const showCalibration = ref(false); const calibrationSubmitting = ref(false); const applyCorrections = ref(false); const goldScores = ref<Record<string, number | null>>({})
 const jobTitle = ref('目标岗位能力模型')
@@ -145,12 +158,12 @@ function dimensionIcon(index: number) { return dimensionIcons[index % dimensionI
 function moveSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; const rect = element.getBoundingClientRect(); element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`); element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`); element.style.setProperty('--spot-opacity', '.62') }
 function resetSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; element.style.setProperty('--spot-x', '50%'); element.style.setProperty('--spot-y', '38%'); element.style.setProperty('--spot-opacity', '.34') }
 function openLibrary() { if (!assessment.value) return; router.push({ path: '/library', query: demoMode.value ? { demo: '1' } : { assessment: assessment.value.id } }) }
-async function loadDemoFixture() { stopPolling(); loading.value = false; loadError.value = ''; running.value = false; assessment.value = demoAssessment; jobTitle.value = '后端开发工程师'; currentPath.value = demoPath; resources.value = demoResources; traceSourceCount.value = 12; await nextTick(); renderRadar() }
+async function loadDemoFixture() { stopPolling(); loading.value = false; loadError.value = ''; running.value = false; assessment.value = demoAssessment; jobTitle.value = '后端开发工程师'; currentPath.value = demoPath; resources.value = demoResources; traceSourceCount.value = 12; await nextTick(); renderVisuals() }
 async function loadAssessment() {
   if (demoMode.value) { await loadDemoFixture(); return }
   if (!assessmentId.value) { if (!publicPreview && !store.userInfo) await store.fetchUserInfo().catch(() => undefined); const latest = store.userInfo?.latest_assessment_id; if (latest) { await router.replace(`/diagnosis/${latest}`); return }; assessment.value = null; currentPath.value = null; resources.value = []; traceSourceCount.value = 0; return }
   loading.value = true; loadError.value = ''
-  try { const item = await getAssessment(assessmentId.value); assessment.value = item; jobTitle.value = '目标岗位能力模型'; getJobList().then(jobs => { jobTitle.value = jobs.find(job => job.id === item.job_id)?.job_title || '目标岗位能力模型' }).catch(() => undefined); running.value = item.overall_mastery === null; if (running.value) startPolling(); else { stopPolling(); await Promise.all([loadPath(), loadResources(), loadTrace()]); nextTick(renderRadar) } } catch (error: any) { loadError.value = error?.response?.data?.detail || '无法读取诊断结果' } finally { loading.value = false }
+  try { const item = await getAssessment(assessmentId.value); assessment.value = item; jobTitle.value = '目标岗位能力模型'; getJobList().then(jobs => { jobTitle.value = jobs.find(job => job.id === item.job_id)?.job_title || '目标岗位能力模型' }).catch(() => undefined); running.value = item.overall_mastery === null; if (running.value) startPolling(); else { stopPolling(); await Promise.all([loadPath(), loadResources(), loadTrace()]); nextTick(renderVisuals) } } catch (error: any) { loadError.value = error?.response?.data?.detail || '无法读取诊断结果' } finally { loading.value = false }
 }
 async function startPolling() { stopPolling(); await pollProgress(); progressTimer = window.setInterval(pollProgress, 2500) }
 async function pollProgress() { if (!assessmentId.value) return; try { progress.value = await getAssessmentProgress(assessmentId.value); if (progress.value.percent >= 100) { stopPolling(); await loadAssessment() } } catch { /* next verified polling cycle retries */ } }
@@ -158,6 +171,39 @@ function stopPolling() { if (progressTimer !== null) { window.clearInterval(prog
 async function loadPath() { if (!assessment.value) return; if (!store.userInfo) await store.fetchUserInfo().catch(() => undefined); if (!store.userInfo) return; pathLoading.value = true; try { const paths = await getLearningPaths(store.userInfo.id); currentPath.value = paths.find(path => path.assessment_id === assessment.value?.id) || null } finally { pathLoading.value = false } }
 async function loadResources() { if (!assessment.value) return; try { resources.value = await getResourceList({ assessment_id: assessment.value.id }) } catch { resources.value = [] } }
 async function loadTrace() { if (!assessment.value) return; try { const response = await getAssessmentAgents(assessment.value.id); traceSourceCount.value = response.trace.retrieval_sources?.length || 0 } catch { traceSourceCount.value = 0 } }
+function renderScore() {
+  if (!scoreRef.value) return
+  scoreChart?.dispose()
+  scoreChart = echarts.init(scoreRef.value)
+  const progressColor = new echarts.graphic.LinearGradient(0, 1, 1, 0, [
+    { offset: 0, color: '#05834a' },
+    { offset: .58, color: '#18b86b' },
+    { offset: 1, color: '#7ee5a7' },
+  ])
+  const gaugeBase = {
+    type: 'gauge' as const,
+    startAngle: 90,
+    endAngle: -270,
+    min: 0,
+    max: 100,
+    pointer: { show: false },
+    axisTick: { show: false },
+    splitLine: { show: false },
+    axisLabel: { show: false },
+    title: { show: false },
+    detail: { show: false },
+    silent: true,
+  }
+  scoreChart.setOption({
+    animationDuration: 1100,
+    animationEasing: 'cubicOut',
+    series: [
+      { ...gaugeBase, radius: '96%', axisLine: { lineStyle: { width: 2, color: [[1, 'rgba(255,255,255,.72)']] } }, data: [{ value: overallPercent.value }] },
+      { ...gaugeBase, radius: '84%', progress: { show: true, roundCap: true, width: 12, itemStyle: { color: progressColor, shadowBlur: 13, shadowColor: 'rgba(28,184,105,.24)' } }, axisLine: { lineStyle: { width: 12, color: [[1, 'rgba(25,132,73,.085)']] } }, data: [{ value: overallPercent.value }] },
+      { ...gaugeBase, radius: '66%', axisLine: { lineStyle: { width: 1, color: [[1, 'rgba(24,155,83,.13)']] } }, data: [{ value: overallPercent.value }] },
+    ],
+  })
+}
 function renderRadar() {
   const dims = assessment.value?.ability_vector || []
   if (!radarRef.value || !dims.length) return
@@ -168,29 +214,38 @@ function renderRadar() {
     animationEasing: 'cubicOut',
     tooltip: { trigger: 'item', formatter: (params: any) => `${params.name || '能力向量'}<br/>${params.value?.map((value: number, index: number) => `${dims[index]?.name} ${toPercent(value)}`).join('<br/>') || ''}` },
     radar: {
-      center: ['50%', '53%'],
-      radius: '63%',
-      splitNumber: 4,
-      axisName: { color: 'rgba(42,92,65,.78)', fontSize: 10 },
-      splitArea: { areaStyle: { color: ['rgba(255,255,255,.025)', 'rgba(222,250,222,.055)', 'rgba(166,240,195,.075)', 'rgba(255,255,255,.018)'] } },
-      splitLine: { lineStyle: { color: ['rgba(7,148,85,.11)', 'rgba(7,148,85,.16)'], width: 1 } },
-      axisLine: { lineStyle: { color: 'rgba(7,148,85,.17)' } },
+      center: ['50%', '54%'],
+      radius: '73%',
+      splitNumber: 5,
+      axisName: { color: 'rgba(35,76,53,.78)', fontSize: 10, fontWeight: 600 },
+      nameGap: 10,
+      splitArea: { areaStyle: { color: ['rgba(255,255,255,.01)', 'rgba(237,252,243,.055)', 'rgba(255,255,255,.012)', 'rgba(222,250,230,.055)', 'rgba(255,255,255,.01)'] } },
+      splitLine: { lineStyle: { color: ['rgba(5,118,66,.075)', 'rgba(5,118,66,.12)'], width: 1 } },
+      axisLine: { lineStyle: { color: 'rgba(5,118,66,.14)' } },
       indicator: dims.map(item => ({ name: item.name, max: 1 })),
     },
-    series: [{
-      type: 'radar',
-      symbol: 'circle',
-      symbolSize: 5,
-      lineStyle: { color: 'rgba(7,148,85,.88)', width: 2, shadowBlur: 8, shadowColor: 'rgba(34,181,107,.2)' },
-      itemStyle: { color: '#1ab66b', borderColor: 'rgba(255,255,255,.9)', borderWidth: 1, shadowBlur: 8, shadowColor: 'rgba(34,181,107,.26)' },
-      areaStyle: { color: new echarts.graphic.RadialGradient(.5, .48, .7, [{ offset: 0, color: 'rgba(91,224,148,.36)' }, { offset: .58, color: 'rgba(39,200,115,.24)' }, { offset: 1, color: 'rgba(222,250,222,.055)' }]) },
-      data: [{ value: dims.map(item => item.value), name: '能力得分' }],
-    }],
+    graphic: [{ type: 'circle', left: 'center', top: '53%', shape: { r: 4 }, style: { fill: 'rgba(255,255,255,.95)', shadowBlur: 12, shadowColor: 'rgba(21,182,101,.45)', stroke: 'rgba(21,155,86,.35)', lineWidth: 1 } }],
+    series: [
+      {
+        type: 'radar', symbol: 'none', silent: true,
+        lineStyle: { color: 'rgba(37,199,113,.12)', width: 8, shadowBlur: 18, shadowColor: 'rgba(35,190,108,.18)' },
+        areaStyle: { color: 'rgba(72,213,133,.055)' },
+        data: [{ value: dims.map(item => item.value), name: '能力得分光层' }],
+      },
+      {
+        type: 'radar', symbol: 'circle', symbolSize: 5,
+        lineStyle: { color: 'rgba(5,139,76,.92)', width: 2.2, shadowBlur: 7, shadowColor: 'rgba(34,181,107,.16)' },
+        itemStyle: { color: '#12aa61', borderColor: 'rgba(255,255,255,.96)', borderWidth: 1.4, shadowBlur: 8, shadowColor: 'rgba(34,181,107,.2)' },
+        areaStyle: { color: new echarts.graphic.RadialGradient(.5, .46, .72, [{ offset: 0, color: 'rgba(116,226,158,.3)' }, { offset: .58, color: 'rgba(49,190,112,.2)' }, { offset: 1, color: 'rgba(10,139,76,.09)' }]) },
+        data: [{ value: dims.map(item => item.value), name: '能力得分' }],
+      },
+    ],
   })
 }
+function renderVisuals() { renderScore(); renderRadar() }
 async function submitCalibration() { if (!assessment.value || demoMode.value) return; const labels = requirementItems.value.map(item => ({ requirement_id: item.requirement_id, gold_score: goldScores.value[item.requirement_id], source_type: 'expert', trusted: true })).filter(item => typeof item.gold_score === 'number' && Number.isFinite(item.gold_score)); if (!labels.length) { ElMessage.warning('至少录入一项真实结果分数'); return }; calibrationSubmitting.value = true; try { await calibrateAssessment(assessment.value.id, { gold_labels: labels, apply_corrections: applyCorrections.value }); ElMessage.success('真实结果校准完成'); await loadAssessment(); showCalibration.value = false } catch (error: any) { ElMessage.error(error?.response?.data?.detail || '校准失败') } finally { calibrationSubmitting.value = false } }
-function handleResize() { chart?.resize() }
-watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); chart = null; loadAssessment() }, { immediate: true }); window.addEventListener('resize', handleResize); onBeforeUnmount(() => { stopPolling(); chart?.dispose(); window.removeEventListener('resize', handleResize) })
+function handleResize() { chart?.resize(); scoreChart?.resize() }
+watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scoreChart?.dispose(); chart = null; scoreChart = null; loadAssessment() }, { immediate: true }); window.addEventListener('resize', handleResize); onBeforeUnmount(() => { stopPolling(); chart?.dispose(); scoreChart?.dispose(); window.removeEventListener('resize', handleResize) })
 </script>
 
 <style scoped>
@@ -401,68 +456,70 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
 .quality-strip button svg { width: 13px; }
 @media (max-width: 1260px) { .core-grid { grid-template-columns: minmax(220px, .72fr) minmax(520px, 1.3fr); } .dimension-card { grid-column: 1/3; min-height: auto; } .dimension-list { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; } .analysis-grid { grid-template-columns: 1fr 1fr; } .roadmap-card { grid-column: 1/3; } .empty-visual-grid { grid-template-columns: .7fr 1.4fr; } .empty-dimension-preview { grid-column: 1/3; min-height: auto; display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; } .empty-dimension-preview > .empty-label { grid-column: 1/6; } .empty-dimension-preview > div { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .diagnosis-heading { display: block; } .heading-actions { margin-top: 15px; } .diagnosis-error { display: block; } .diagnosis-error button { margin: 14px 0 0; } .empty-diagnostic { padding: 14px; } .empty-visual-grid { grid-template-columns: 1fr; } .empty-match-preview { display: none; } .empty-core-stage { min-height: 400px; } .empty-dimension-preview { grid-column: auto; display: block; } .empty-process { grid-template-columns: 1fr 1fr; gap: 15px 0; } .empty-process > div:nth-child(2) { border-right: 0; } .core-grid { grid-template-columns: 1fr; } .diagnostic-core { order: -1; min-height: 510px; } .dimension-card { grid-column: auto; } .core-glass { width: 94%; } .core-body { grid-template-columns: 1fr; height: auto; } .core-topline { display: none; } .score-dial { margin: 13px auto 0; } .radar-chart { height: 220px; } .core-meta { flex-wrap: wrap; } .dimension-list { grid-template-columns: 1fr; } .analysis-grid { grid-template-columns: 1fr; } .roadmap-card { grid-column: auto; } .evidence-insights { grid-template-columns: 1fr; } .evidence-insights > section { padding: 0; } .evidence-insights > section + section { margin-top: 20px; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); } .quality-strip { grid-template-columns: 1fr 1fr; } .quality-strip > div { border: 0; } .calibration-panel { grid-template-columns: 1fr; } .calibration-fields { grid-template-columns: 1fr 1fr; } .calibration-actions { grid-column: auto; display: block; } .calibration-actions button { margin-top: 12px; } .match-card { min-height: 290px; } }
-/* Liquid Glass material pass: the diagnostic console is a floating transparent device, not a white dashboard card. */
+/* Diagnostic Console V4: clean liquid glass with restrained environmental light. */
 .diagnostic-core {
-  --spot-opacity: .34;
+  --spot-opacity: .26;
   min-height: 438px;
-  border: 1px solid rgba(255,255,255,.48);
+  border: 1px solid rgba(255,255,255,.58);
   background:
-    radial-gradient(ellipse at 50% 68%, rgba(135,235,176,.12), transparent 51%),
-    linear-gradient(145deg, rgba(255,255,255,.13), rgba(222,250,222,.035) 54%, rgba(122,229,166,.075));
+    radial-gradient(ellipse at 50% 94%, rgba(161,230,189,.11), transparent 42%),
+    linear-gradient(145deg, rgba(255,255,255,.2), rgba(249,255,252,.085) 58%, rgba(216,245,228,.055));
   box-shadow:
-    0 34px 88px rgba(18,92,52,.085),
-    inset 0 1px 1px rgba(255,255,255,.72),
-    inset 0 -1px 1px rgba(42,174,98,.035);
-  backdrop-filter: blur(17px) saturate(148%);
-  -webkit-backdrop-filter: blur(17px) saturate(148%);
+    0 32px 82px rgba(18,78,47,.07),
+    inset 0 1px 1px rgba(255,255,255,.78),
+    inset 0 -1px 1px rgba(42,174,98,.025);
+  backdrop-filter: blur(15px) saturate(118%);
+  -webkit-backdrop-filter: blur(15px) saturate(118%);
 }
 .diagnostic-core::before {
-  inset: auto 10% 1.5%;
-  height: 132px;
+  inset: auto 18% 4%;
+  height: 72px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(179,243,203,.28) 0%, rgba(222,250,222,.14) 43%, transparent 74%);
-  filter: blur(22px);
-  opacity: .46;
+  background: radial-gradient(ellipse, rgba(96,210,143,.18) 0%, rgba(206,246,221,.1) 48%, transparent 76%);
+  filter: blur(15px);
+  opacity: .52;
 }
 .diagnostic-core::after {
   background:
-    radial-gradient(min(270px, 31vw) circle at var(--spot-x) var(--spot-y), rgba(255,255,255,var(--spot-opacity)), transparent 70%),
-    linear-gradient(118deg, rgba(255,255,255,.11), transparent 28%, rgba(117,230,161,.035) 67%, rgba(255,255,255,.09));
+    radial-gradient(min(230px, 28vw) circle at var(--spot-x) var(--spot-y), rgba(255,255,255,var(--spot-opacity)), transparent 72%),
+    linear-gradient(118deg, rgba(255,255,255,.1), transparent 28%, rgba(117,230,161,.018) 69%, rgba(255,255,255,.08));
   transition: background .22s ease;
 }
 .diagnostic-platform {
-  inset: -1% -3% -9%;
-  width: 106%;
-  height: 110%;
-  object-position: center 59%;
-  opacity: .68;
-  mask-image: radial-gradient(ellipse at 50% 60%, #000 57%, rgba(0,0,0,.82) 73%, transparent 94%);
-  filter: saturate(1.02) contrast(1.015) brightness(1.025);
+  inset: 8% -2% -16%;
+  width: 104%;
+  height: 108%;
+  object-position: center 67%;
+  mix-blend-mode: normal;
+  opacity: .24;
+  mask-image: radial-gradient(ellipse at 50% 68%, #000 42%, rgba(0,0,0,.68) 62%, transparent 88%);
+  filter: saturate(.78) contrast(.96) brightness(1.12);
 }
 .core-glass {
   position: relative;
   z-index: 4;
   isolation: isolate;
-  width: min(748px, calc(100% - 56px));
-  min-height: 336px;
-  margin-top: -13px;
+  width: min(780px, calc(100% - 46px));
+  min-height: 356px;
+  margin-top: -18px;
+  padding: 20px 23px 14px;
   overflow: hidden;
   border: 1px solid transparent;
-  outline: 1px solid rgba(116,226,160,.085);
+  outline: 1px solid rgba(116,226,160,.07);
   outline-offset: -4px;
   border-radius: 29px;
   background:
-    linear-gradient(138deg, rgba(255,255,255,.33) 0%, rgba(250,255,252,.13) 35%, rgba(231,250,237,.06) 64%, rgba(190,240,208,.055) 100%) padding-box,
-    linear-gradient(132deg, rgba(255,255,255,.94), rgba(255,255,255,.25) 31%, rgba(151,232,183,.34) 72%, rgba(255,255,255,.73)) border-box;
+    linear-gradient(138deg, rgba(255,255,255,.3) 0%, rgba(253,255,254,.17) 34%, rgba(244,252,247,.1) 68%, rgba(214,242,225,.07) 100%) padding-box,
+    linear-gradient(132deg, rgba(255,255,255,.96), rgba(255,255,255,.28) 31%, rgba(151,232,183,.24) 73%, rgba(255,255,255,.72)) border-box;
   box-shadow:
-    0 41px 94px rgba(12,92,48,.145),
-    0 15px 34px rgba(58,178,106,.052),
-    0 -9px 30px rgba(255,255,255,.28),
-    inset 0 2px 1px rgba(255,255,255,.86),
+    0 39px 88px rgba(12,73,42,.12),
+    0 13px 29px rgba(58,178,106,.035),
+    0 -8px 27px rgba(255,255,255,.26),
+    inset 0 2px 1px rgba(255,255,255,.9),
     inset 1px 0 1px rgba(255,255,255,.42),
-    inset -1px -3px 3px rgba(40,179,97,.07);
-  backdrop-filter: blur(20px) saturate(166%) brightness(1.025);
-  -webkit-backdrop-filter: blur(20px) saturate(166%) brightness(1.025);
+    inset -1px -3px 3px rgba(40,179,97,.045);
+  backdrop-filter: blur(24px) saturate(122%) brightness(1.035);
+  -webkit-backdrop-filter: blur(24px) saturate(122%) brightness(1.035);
   transform: translateY(-8px) perspective(900px) rotateX(.55deg);
   transform-origin: center bottom;
   transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s ease;
@@ -470,11 +527,11 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
 .core-glass:hover {
   transform: translateY(-10px) perspective(900px) rotateX(.25deg);
   box-shadow:
-    0 45px 102px rgba(12,92,48,.155),
-    0 18px 40px rgba(58,178,106,.08),
+    0 43px 98px rgba(12,73,42,.135),
+    0 17px 37px rgba(58,178,106,.045),
     0 -9px 30px rgba(255,255,255,.3),
     inset 0 2px 1px rgba(255,255,255,.9),
-    inset -1px -2px 2px rgba(40,179,97,.085);
+    inset -1px -2px 2px rgba(40,179,97,.06);
 }
 .core-glass::before {
   content: '';
@@ -484,11 +541,11 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
   border-radius: inherit;
   pointer-events: none;
   background:
-    radial-gradient(220px circle at var(--spot-x) var(--spot-y), rgba(255,255,255,.31), transparent 72%),
-    linear-gradient(111deg, rgba(255,255,255,.56) 0%, rgba(255,255,255,.13) 18%, transparent 35%),
-    radial-gradient(ellipse at 72% 112%, rgba(188,241,208,.07), transparent 58%);
+    radial-gradient(210px circle at var(--spot-x) var(--spot-y), rgba(255,255,255,.25), transparent 73%),
+    linear-gradient(111deg, rgba(255,255,255,.6) 0%, rgba(255,255,255,.12) 18%, transparent 35%),
+    radial-gradient(ellipse at 72% 112%, rgba(188,241,208,.045), transparent 54%);
   mix-blend-mode: screen;
-  opacity: .78;
+  opacity: .72;
 }
 .core-glass::after {
   content: '';
@@ -500,64 +557,82 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
   box-shadow:
     inset 0 2px 1px rgba(255,255,255,.8),
     inset 10px 0 25px rgba(255,255,255,.055),
-    inset -1px -3px 2px rgba(49,185,105,.075);
-  border-top: 1px solid rgba(255,255,255,.62);
-  border-right: 1px solid rgba(116,226,160,.055);
+    inset -1px -3px 2px rgba(49,185,105,.052);
+  border-top: 1px solid rgba(255,255,255,.7);
+  border-right: 1px solid rgba(116,226,160,.04);
 }
 .core-glass > * { position: relative; z-index: 2; }
-.core-topline { color: rgba(15,49,31,.9); }
-.core-body { height: 250px; }
-.score-dial {
-  background: conic-gradient(from 210deg, rgba(7,148,85,.88) 0deg, rgba(91,220,148,.79) var(--score), rgba(222,250,230,.35) var(--score));
-  box-shadow:
-    0 0 0 8px rgba(255,255,255,.19),
-    0 0 0 9px rgba(12,159,78,.085),
-    0 16px 34px rgba(13,124,69,.13),
-    inset 0 1px 1px rgba(255,255,255,.7);
-  backdrop-filter: blur(8px) saturate(140%);
+.core-body {
+  display: grid;
+  grid-template-columns: minmax(188px, .78fr) 1px minmax(320px, 1.32fr);
+  gap: 20px;
+  align-items: stretch;
+  height: 282px;
 }
-.score-dial::before {
-  inset: 6px;
-  border-top-color: rgba(255,255,255,.92);
-  border-right: 1px solid rgba(255,255,255,.22);
-  filter: drop-shadow(0 3px 7px rgba(255,255,255,.3));
-}
-.score-dial > div {
-  width: 124px;
-  height: 124px;
-  border: 1px solid rgba(255,255,255,.52);
-  background: radial-gradient(circle at 37% 26%, rgba(255,255,255,.78), rgba(248,255,250,.56) 54%, rgba(220,249,229,.31));
-  box-shadow: inset 0 2px 2px rgba(255,255,255,.7), inset 0 -1px 2px rgba(28,164,85,.06);
-  backdrop-filter: blur(15px) saturate(148%);
-  -webkit-backdrop-filter: blur(15px) saturate(148%);
-}
-.radar-chart {
+.score-module,
+.radar-module { min-width: 0; display: flex; flex-direction: column; }
+.core-module-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: rgba(14,45,28,.92); }
+.core-module-heading span { font-size: 13px; font-weight: 800; }
+.core-module-heading small { color: rgba(65,105,82,.5); font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+.score-gauge-shell {
+  width: 182px;
+  height: 182px;
+  margin: 15px auto 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.46);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,.075), rgba(178,241,202,.045) 49%, transparent 72%);
-  filter: drop-shadow(0 13px 24px rgba(23,139,74,.07));
+  background: radial-gradient(circle at 38% 30%, rgba(255,255,255,.5), rgba(248,255,251,.19) 59%, rgba(211,244,224,.08));
+  box-shadow: inset 0 2px 2px rgba(255,255,255,.72), 0 16px 38px rgba(12,104,57,.065);
+  backdrop-filter: blur(9px);
+}
+.score-gauge { position: absolute; inset: 6px; }
+.score-value { position: relative; z-index: 2; display: flex; align-items: baseline; justify-content: center; color: #086c40; }
+.score-value b { font-size: 48px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.score-value span { margin-left: 3px; color: rgba(42,78,57,.58); font-size: 10px; font-weight: 600; }
+.score-verdict { width: max-content; margin: -7px auto 0; padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(16,153,80,.12); border-radius: 99px; color: #087748; background: rgba(241,255,247,.38); font-size: 9px; font-weight: 700; backdrop-filter: blur(8px); }
+.score-verdict i,
+.core-status i { width: 5px; height: 5px; border-radius: 50%; background: #21b76b; box-shadow: 0 0 0 4px rgba(33,183,107,.08); }
+.core-separator { width: 1px; height: 76%; margin: auto 0; background: linear-gradient(180deg, transparent, rgba(21,111,61,.1) 25%, rgba(255,255,255,.62) 52%, rgba(21,111,61,.08) 76%, transparent); }
+.radar-chart {
+  width: 100%;
+  max-width: 410px;
+  height: 264px;
+  margin: 1px auto 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.11), rgba(178,241,202,.025) 50%, transparent 72%);
+  filter: drop-shadow(0 12px 22px rgba(23,139,74,.055));
 }
 .core-meta {
-  width: max-content;
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 5px 11px;
-  border: 1px solid rgba(255,255,255,.3);
-  border-radius: 999px;
-  background: rgba(255,255,255,.11);
-  backdrop-filter: blur(10px);
+  min-height: 31px;
+  margin-top: 5px;
+  padding: 9px 10px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 13px;
+  border-top: 1px solid rgba(28,102,60,.07);
+  color: rgba(55,89,68,.54);
+  font-size: 9px;
 }
+.core-meta > span + span { position: relative; }
+.core-meta > span + span::before { content: ''; position: absolute; left: -7px; top: 50%; width: 2px; height: 2px; margin-top: -1px; border-radius: 50%; background: rgba(31,102,62,.24); }
+.core-status { display: inline-flex; align-items: center; gap: 6px; color: rgba(8,119,72,.72); }
+.core-status::before { display: none; }
+.demo-badge { padding: 3px 7px; border: 1px solid rgba(20,156,82,.1); background: rgba(239,255,246,.38); }
 .match-card,
 .dimension-card {
-  border-color: rgba(255,255,255,.62);
+  border-color: rgba(255,255,255,.66);
   background:
-    linear-gradient(145deg, rgba(255,255,255,.46), rgba(245,255,249,.24) 56%, rgba(189,244,207,.11)),
-    rgba(250,255,252,.22);
+    linear-gradient(145deg, rgba(255,255,255,.45), rgba(249,255,251,.25) 60%, rgba(215,245,226,.08)),
+    rgba(250,255,252,.2);
   box-shadow:
-    0 28px 70px rgba(21,88,54,.075),
-    inset 0 1px 1px rgba(255,255,255,.88),
-    inset 0 -1px 1px rgba(36,164,91,.035);
-  backdrop-filter: blur(29px) saturate(160%);
-  -webkit-backdrop-filter: blur(29px) saturate(160%);
+    0 27px 66px rgba(21,75,47,.065),
+    inset 0 1px 1px rgba(255,255,255,.9),
+    inset 0 -1px 1px rgba(36,164,91,.025);
+  backdrop-filter: blur(28px) saturate(125%);
+  -webkit-backdrop-filter: blur(28px) saturate(125%);
 }
 .evidence-insights,
 .agent-summary,
@@ -572,9 +647,15 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
 }
 
 @media (max-width: 720px) {
-  .diagnostic-core { min-height: 520px; }
-  .core-glass { width: 94%; margin-top: -2px; transform: none; }
+  .diagnostic-core { min-height: 690px; }
+  .core-glass { width: 94%; min-height: 626px; margin-top: -2px; transform: none; }
   .core-glass:hover { transform: translateY(-2px); }
-  .diagnostic-platform { inset: 0 -11% -4%; width: 122%; height: 104%; }
+  .core-body { grid-template-columns: 1fr; gap: 12px; height: auto; }
+  .core-separator { width: 76%; height: 1px; margin: 0 auto; background: linear-gradient(90deg, transparent, rgba(21,111,61,.12), rgba(255,255,255,.7), rgba(21,111,61,.1), transparent); }
+  .score-gauge-shell { width: 160px; height: 160px; margin-top: 9px; }
+  .score-value b { font-size: 43px; }
+  .radar-chart { height: 235px; }
+  .core-meta { flex-wrap: wrap; }
+  .diagnostic-platform { inset: 22% -11% -9%; width: 122%; height: 90%; }
 }
 </style>
