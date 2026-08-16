@@ -13,7 +13,7 @@
 | 后端 | Python 3.10+（FastAPI） |
 | 数据库 | SQLite |
 | 向量库 | Qdrant（本地文件模式）+ BGE-M3 嵌入模型 |
-| AI 推理 | DeepSeek API（7 个串行 Agent，无 API 时自动降级为规则引擎） |
+| AI 推理 | DeepSeek API（含真实结果校准的串行 Agent，无 API 时自动降级为规则引擎） |
 | 防幻觉 | DeepSeek API（复用 LLM 配置，比对知识库原文，无需额外部署） |
 | 前端 | Vue 3 + Element Plus |
 
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 ### 3. 向量库与嵌入模型
 
-- **qdrant_storage 向量库**（2,269 条岗位知识片段）：已随仓库分发，clone 后直接可用，无需额外获取。
+- **qdrant_storage 向量库**（2,269 条岗位知识片段）：本次交接包已附带与 `knowledge/active` 四个切片匹配的 `storage.sqlite`；如果只从 GitHub clone，需要从交接包补回该文件，或按知识库文档重新向量化。
 - **BGE-M3 嵌入模型**（约 2.2GB）：**需自行下载**（体积过大，未随仓库分发）。从 HuggingFace 下载 `BAAI/bge-m3`，把整个模型目录放到 `backend/bge-m3/`。国内可设镜像 `HF_ENDPOINT=https://hf-mirror.com` 加速。
 
 > 缺少模型时后端不会崩溃，但向量检索会返回空、资源生成退化为模板内容；补全后即恢复完整效果。BGE-M3 首次加载约 20~40 秒，加载后常驻内存。
@@ -110,7 +110,7 @@ npm run dev
 │   ├── routers/                # API 路由
 │   ├── adapters/               # 适配层
 │   │   ├── agent_adapter.py    # Agent 对外接口
-│   │   ├── agent_runtime.py    # Agent 运行时（7 个串行 Agent）
+│   │   ├── agent_runtime.py    # Agent 运行时（串行 Agent 与真实结果校准）
 │   │   ├── llm_client.py       # LLM 客户端（OpenAI 兼容）
 │   │   ├── vector_adapter.py   # 向量检索适配（Qdrant + BGE-M3）
 │   │   └── guardrail.py        # 防幻觉校验（比对知识库原文）
@@ -137,13 +137,16 @@ npm run dev
   → 岗位知识库检索 Agent（Qdrant + BGE-M3 向量检索）
   → 岗位能力诊断 Agent（生成 16 维能力向量 + 知识缺口）
   → 诊断结果校正 Agent（校验字段、数值范围、文本充分度）
+  → 真实结果校准 Agent（对照客观题/实操/专家标注计算准确率，可选纠正）
   → 防幻觉校验（DeepSeek 比对知识库原文）
   → 个性化资源生成 Agent（基于检索片段生成讲义/练习/案例）
   → 层2 资源校验（比对原文，标记 passed / partial / blocked）
   → 个性化学习路径 Agent（按能力缺口规划 8 步学习路径）
 ```
 
-7 个 Agent 串行执行，每个 Agent 有独立身份（system prompt），LLM 不可用时自动降级为确定性规则引擎。
+多个 Agent 串行执行，每个 Agent 有独立身份（system prompt），LLM 不可用时自动降级为确定性规则引擎。真实结果校准 Agent 不使用模型置信度代替准确率：没有真实标注时状态为 `unvalidated`，只有接入可信的客观题、实操结果或专家标注后才计算准确率。
+
+准确率相关接口和数据格式详见 [`GROUND_TRUTH_CALIBRATION.md`](GROUND_TRUTH_CALIBRATION.md)。
 
 ## 四个岗位能力模型
 

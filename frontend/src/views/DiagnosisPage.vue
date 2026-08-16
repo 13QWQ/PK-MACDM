@@ -1,1552 +1,374 @@
 <template>
-  <div class="diagnosis-page">
-    <!-- 顶部渐变区 -->
-    <section class="diagnosis-hero">
-      <h2 class="page-title">能力诊断</h2>
-      <p class="page-desc">AI 对照目标岗位能力模型，多维度分析你的能力水平</p>
-    </section>
+  <div class="page-shell diagnosis-page">
+    <div class="content-width">
+      <header class="diagnosis-heading motion-enter">
+        <div><span class="eyebrow">DIAGNOSTIC CORE</span><h1 class="page-title">能力诊断 <MagicStick /></h1><p class="page-subtitle">基于岗位能力模型与可追溯证据，形成多维能力判断、真实结果校准和下一阶段学习建议。</p></div>
+        <div class="heading-actions"><button type="button" class="top-action" :disabled="loading || running" @click="loadAssessment"><Refresh /> 重新读取</button><button type="button" class="top-action primary" :disabled="demoMode || !assessment || !requirementItems.length" @click="showCalibration = !showCalibration"><Aim /> {{ showCalibration ? '收起校准' : '校准准确率' }}</button></div>
+      </header>
 
-    <div class="page-content">
-      <!-- ===== 无评估 ID：引导卡片 ===== -->
-      <div v-if="!assessmentId" class="guide-card">
-        <div class="guide-icon">📊</div>
-        <h3 class="guide-title">还没有诊断记录</h3>
-        <p class="guide-desc">请先选择目标职业并提交你的技能与项目经历，AI 将为你生成详细的能力诊断报告。</p>
-        <button class="app-btn app-btn-primary app-btn-large" @click="$router.push('/input')">
-          🚀 开始资料审查
-        </button>
-      </div>
+      <section v-if="loading || running" class="diagnosis-loading glass-surface">
+        <img src="/assets/diagnostic-platform.png" alt="正在运行的诊断空间核心" />
+        <div class="loading-copy"><span class="glass-pill"><Loading /> Agent 运行中</span><h2>{{ running ? progress.label : '正在读取诊断报告' }}</h2><p>{{ running ? `${progress.percent}% · 系统会在真实 Agent 任务完成后自动刷新` : '正在加载本次诊断的真实数据' }}</p><div class="loading-track"><i :style="{ width: `${Math.max(8, progress.percent)}%` }"></i></div></div>
+      </section>
 
-      <!-- ===== 有评估 ID：加载/错误/结果 ===== -->
+      <section v-else-if="loadError" class="diagnosis-error glass-surface"><WarningFilled /><div><h2>{{ loadError }}</h2><p>请检查本次诊断是否已完成，或返回资料审查重新启动任务。</p></div><button type="button" @click="router.push('/input')">前往资料审查</button></section>
+
+      <section v-else-if="!assessment" class="empty-diagnostic glass-surface motion-enter motion-delay-1">
+        <div class="empty-visual-grid">
+          <aside class="empty-match-preview"><span class="empty-label">岗位匹配度</span><strong>--</strong><small>等待能力证据</small><div class="empty-glass-orb"><Briefcase /></div></aside>
+          <div class="empty-core-stage"><img src="/assets/diagnostic-platform.png" alt="待激活的能力诊断空间核心" /><div class="empty-core-copy"><span class="glass-pill"><DataAnalysis /> Diagnostic Core</span><h2>完成资料审查，激活能力诊断核心</h2><p>系统将汇总资料证据、能力问答与岗位要求，生成评分、雷达图和优先学习路径。</p><button class="primary-gradient-button" type="button" @click="router.push('/input')">开始资料审查 <ArrowRight /></button></div></div>
+          <aside class="empty-dimension-preview"><span class="empty-label">能力维度</span><div v-for="name in emptyDimensions" :key="name"><span>{{ name }}</span><i></i><em>待评估</em></div></aside>
+        </div>
+        <div class="empty-process"><div v-for="(step, index) in emptySteps" :key="step.title"><span><component :is="step.icon" /></span><b>{{ index + 1 }}. {{ step.title }}</b><small>{{ step.detail }}</small></div></div>
+      </section>
+
       <template v-else>
-        <!-- 加载中 -->
-        <div v-if="loading" class="loading-area">
-          <div class="loading-spinner"></div>
-          <p>正在加载诊断结果...</p>
-        </div>
+        <section v-if="showCalibration" class="calibration-panel glass-surface motion-enter"><div><span class="glass-pill">真实结果校准</span><h2>录入客观题、实操或专家标注结果</h2><p>系统仅在收到可追溯的真实结果后计算准确率；未校准不等于准确率低。</p></div><div class="calibration-fields"><label v-for="item in requirementItems" :key="item.requirement_id"><span>{{ item.requirement_name }}</span><input v-model.number="goldScores[item.requirement_id]" type="number" min="0" max="100" placeholder="0–100" /></label></div><div class="calibration-actions"><label class="correction-check"><input v-model="applyCorrections" type="checkbox" /> 将可信结果用于校正本次诊断</label><button type="button" :disabled="calibrationSubmitting" @click="submitCalibration">{{ calibrationSubmitting ? '校准中…' : '提交真实结果' }}</button></div></section>
 
-        <!-- 加载失败 -->
-        <el-alert
-          v-else-if="loadError"
-          :title="loadError"
-          type="error"
-          show-icon
-          :closable="false"
-          style="margin-bottom: 16px"
-        >
-          <template #default>
-            <el-button type="primary" size="small" @click="loadAssessment">重试</el-button>
-          </template>
-        </el-alert>
+        <section class="core-grid motion-enter motion-delay-1">
+          <article class="match-card glass-surface">
+            <div class="card-heading"><span class="card-eyebrow">总体匹配度</span><Briefcase /></div>
+            <p>与 {{ jobTitle }} 能力模型匹配度</p>
+            <strong class="gradient-number">{{ overallPercent }}<small>%</small></strong>
+            <span class="match-badge" :class="levelClass"><i></i>{{ levelText }}</span>
+            <div class="match-insight"><span>诊断置信度</span><b>{{ confidencePercent }}%</b></div>
+            <footer>基于 {{ traceSourceCount || '待加载' }} 条可追溯依据</footer>
+          </article>
 
-        <!-- 诊断中（已提交但 AI 尚未完成） -->
-        <div v-else-if="assessment && assessment.overall_mastery === null" class="pending-card">
-          <div class="pending-icon">⏳</div>
-          <h3 class="pending-title">AI 诊断进行中</h3>
-          <p class="pending-label">{{ progress.label }}</p>
-          <div class="pending-progress-wrap">
-            <el-progress :percentage="progress.percent" :stroke-width="10" />
-          </div>
-          <p class="pending-percent">{{ progress.percent }}%</p>
-        </div>
-
-        <!-- 诊断结果已就绪 -->
-        <template v-else-if="assessment">
-          <!-- Tab 栏 -->
-          <div class="tab-bar">
-            <button
-              v-for="tab in tabs"
-              :key="tab.key"
-              :class="['tab-btn', { active: activeTab === tab.key }]"
-              @click="activeTab = tab.key"
-            >{{ tab.label }}</button>
-          </div>
-
-          <!-- ===== Tab 1: 诊断结果 ===== -->
-          <div v-show="activeTab === 'diagnosis'" class="tab-content">
-            <!-- 概览卡片：掌握度 + 置信度 -->
-            <div class="overview-row">
-              <div class="overview-card mastery-card">
-                <div class="overview-label">
-                  综合掌握度
-                  <el-tooltip placement="top" effect="light" :show-after="150">
-                    <template #content>
-                      <div class="tip-box">
-                        <div class="tip-title">综合掌握度</div>
-                        <p><b>是什么：</b>对照目标岗位能力模型，对你当前能力水平的整体打分（0–100 分），由各能力维度按权重加权汇总得出，反映你相对该岗位的「整体胜任程度」。</p>
-                        <p><b>怎么读：</b>分数越高越接近岗位要求；60 分以下说明仍有明显能力缺口。</p>
-                        <p class="tip-diff"><b>与置信度的区别：</b>掌握度回答「你水平有多高」，置信度回答「这个结论有多可信」。</p>
-                      </div>
-                    </template>
-                    <span class="help-circle">?</span>
-                  </el-tooltip>
-                </div>
-                <div class="mastery-ring" :style="{ '--pct': assessment.overall_mastery }">
-                  <span class="mastery-value">{{ Math.round(assessment.overall_mastery * 100) }}</span>
-                  <span class="mastery-unit">分</span>
-                </div>
-                <div class="mastery-tag" :class="masteryLevelClass">{{ masteryLevelText }}</div>
-              </div>
-              <div class="overview-card meta-card">
-                <div class="meta-item">
-                  <span class="meta-label">
-                    置信度
-                    <el-tooltip placement="top" effect="light" :show-after="150">
-                      <template #content>
-                        <div class="tip-box">
-                          <div class="tip-title">置信度</div>
-                          <p><b>是什么：</b>AI 对本次诊断结论「可信程度」的估计（0–100%）。</p>
-                          <p><b>取决于：</b>你提供的信息量——经历描述越具体、证据越充分，置信度越高；信息越模糊或不足，置信度越低。</p>
-                          <p><b>怎么读：</b>置信度高 = 结果可靠，可放心参考；置信度低 = 输入信息有限，结果仅供参考，建议补充经历后重新诊断。</p>
-                          <p class="tip-diff"><b>与掌握度的区别：</b>置信度回答「这个结论有多可信」，掌握度回答「你水平有多高」。</p>
-                        </div>
-                      </template>
-                      <span class="help-circle">?</span>
-                    </el-tooltip>
-                  </span>
-                  <span class="meta-value">{{ assessment.confidence !== null ? Math.round(assessment.confidence * 100) + '%' : '—' }}</span>
-                </div>
-                <div class="meta-item">
-                  <span class="meta-label">能力维度</span>
-                  <span class="meta-value">{{ assessment.ability_vector.length }} 项</span>
-                </div>
-                <div class="meta-item">
-                  <span class="meta-label">知识缺口</span>
-                  <span class="meta-value" :class="{ warn: assessment.knowledge_gaps.length > 0 }">{{ assessment.knowledge_gaps.length }} 项</span>
-                </div>
-                <div class="meta-item">
-                  <span class="meta-label">诊断时间</span>
-                  <span class="meta-value">{{ formatTime(assessment.created_at) }}</span>
-                </div>
-              </div>
+          <article class="diagnostic-core" @pointermove="moveSpotlight">
+            <img class="diagnostic-platform" src="/assets/diagnostic-platform.png" alt="绿色玻璃质感的能力诊断空间平台" />
+            <div class="core-glass glass-surface">
+              <div class="core-topline"><span>综合得分</span><span>能力雷达图</span></div>
+              <div class="core-body"><div class="score-dial" :style="{ '--score': `${overallPercent * 3.6}deg` }"><div><b class="gradient-number">{{ overallPercent }}</b><small>/100</small><em>{{ levelText }}</em></div></div><div ref="radarRef" class="radar-chart"></div></div>
+              <div class="core-meta"><span>评估于 {{ formattedDate }}</span><span>·</span><span>{{ traceLabel }}</span><span v-if="demoMode" class="demo-badge">DEV 示例</span></div>
             </div>
+          </article>
 
-            <!-- 用户输入原文（可折叠） -->
-            <div v-if="assessment.user_input" class="input-review-card">
-              <div class="irc-header" @click="showInput = !showInput">
-                <span class="irc-title">📝 我的输入</span>
-                <span class="irc-toggle">{{ showInput ? '收起 ▲' : '展开 ▼' }}</span>
-              </div>
-              <div v-show="showInput" class="irc-body">{{ assessment.user_input }}</div>
-            </div>
+          <article class="dimension-card glass-surface">
+            <div class="dimension-head"><span class="card-eyebrow">能力维度评分</span><span class="dimension-count">{{ assessment.ability_vector?.length || 0 }} 项</span></div>
+            <div class="dimension-list"><div v-for="item in dimensionPreview" :key="item.index" class="dimension-row"><div><span class="dimension-icon"><component :is="dimensionIcon(item.index)" /></span><b>{{ item.name }}</b></div><strong>{{ toPercent(item.value) }}<small>/100</small></strong><div class="dimension-bar"><i :style="{ width: `${toPercent(item.value)}%` }"></i></div></div></div>
+          </article>
+        </section>
 
-            <!-- 雷达图 -->
-            <div class="chart-card">
-              <h3 class="card-title">能力雷达图</h3>
-              <div ref="chartRef" class="radar-chart"></div>
-            </div>
+        <section class="analysis-grid motion-enter motion-delay-2">
+          <article class="evidence-insights glass-surface">
+            <section class="strengths"><h2><StarFilled /> 优势亮点</h2><ul v-if="strengths.length"><li v-for="item in strengths" :key="item.index"><span><CircleCheck /></span><div><b>{{ item.name }}</b><small>{{ toPercent(item.value) }} 分 · 已具备较强能力证据</small></div></li></ul><p v-else>本次诊断暂未形成足够的优势能力结论。</p></section>
+            <section class="gaps"><h2><WarningFilled /> 待提升项</h2><ul v-if="gaps.length"><li v-for="(gap, index) in gaps.slice(0, 3)" :key="gap"><b>{{ String(index + 1).padStart(2, '0') }}</b><span>{{ gap }}</span></li></ul><p v-else>当前未识别到需要优先补强的能力缺口。</p></section>
+          </article>
 
-            <!-- 知识缺口列表 -->
-            <div v-if="assessment.knowledge_gaps.length > 0" class="gaps-card">
-              <h3 class="card-title">知识缺口</h3>
-              <p class="card-subtitle">以下能力领域尚未达标或证据不足，建议重点关注</p>
-              <div class="gaps-grid">
-                <div v-for="(gap, i) in assessment.knowledge_gaps" :key="i" class="gap-item">
-                  <span class="gap-index">{{ i + 1 }}</span>
-                  <span class="gap-text">{{ gap }}</span>
-                </div>
-              </div>
-            </div>
+          <article class="agent-summary glass-surface"><span class="agent-face"><Cpu /></span><h2>Agent 综合结论</h2><p>{{ agentSummary }}</p><div class="summary-evidence"><Files /><span>资料证据 · 项目描述 · 学习轨迹</span></div><div class="review-metric"><span>真实结果准确率</span><b :class="accuracyClass">{{ calibrationText }}</b></div><button type="button" @click="openLibrary">查看推荐学习资料 <ArrowRight /></button></article>
 
-            <!-- 防幻觉校验汇总 -->
-            <div class="anti-hallucination-card">
-              <h3 class="card-title">
-                🛡️ 防幻觉校验
-                <el-tooltip placement="top" effect="light" :show-after="150">
-                  <template #content>
-                    <div class="tip-box tip-box-wide">
-                      <div class="tip-title">资源校验状态说明</div>
-                      <p><b>有依据</b>：有知识库原文，且已比对，确认内容忠实于原文、没有编造。</p>
-                      <p><b>部分匹配</b>：有知识库原文，比对后大部分有依据、小部分存疑。</p>
-                      <p><b>无依据</b>：有知识库原文，但比对后发现编造或偏离，已过滤。</p>
-                      <p><b>未知</b>：没有知识库原文可比，跳过校验，无结论。</p>
-                      <p class="tip-diff">补充：知识缺口与学习资源均由 AI 生成，受当前知识库收录范围所限，部分正确知识尚未入库，可能被误判为「无依据」。后续可继续扩充知识库，逐步提升防幻觉校验的准确度与输出质量。</p>
-                    </div>
-                  </template>
-                  <span class="help-circle">?</span>
-                </el-tooltip>
-              </h3>
-              <p class="card-subtitle">AI 诊断结论与生成内容均已对照岗位能力模型 / 知识库比对校验</p>
+          <article class="roadmap-card glass-surface"><div class="roadmap-heading"><h2><MapLocation /> 优先学习路径</h2><span>推荐</span></div><div v-if="pathLoading" class="path-empty">正在读取学习路径…</div><div v-else-if="currentPath?.steps?.length" class="roadmap"><div class="roadmap-line"></div><div v-for="(step, index) in currentPath.steps.slice(0, 3)" :key="step.step" class="roadmap-step" :class="{ current: index === 0 }"><span>{{ String(index + 1).padStart(2, '0') }}</span><div><b>{{ step.knowledge_point }}</b><small>{{ step.resource_type }} · {{ step.estimated_time }} 分钟</small></div></div></div><div v-else class="path-empty">本次诊断尚未生成可展示的学习路径。</div></article>
+        </section>
 
-              <!-- 层1：知识缺口校验 -->
-              <div class="ah-layer">
-                <div class="ah-layer-header" @click="showGapDetail = !showGapDetail">
-                  <div class="ah-layer-summary">
-                    <span class="ah-layer-tag">层1 知识缺口</span>
-                    <span class="ah-summary-text">
-                      诊断发现 {{ gapValidationStats.total }} 个缺口 →
-                      有依据 <b class="c-ok">{{ gapValidationStats.grounded }}</b> ·
-                      部分匹配 <b class="c-warn">{{ gapValidationStats.partial }}</b> ·
-                      无依据 <b class="c-bad">{{ gapValidationStats.ungrounded }}</b>
-                      <span class="ah-blocked">（拦截 {{ gapValidationStats.ungrounded }}）</span>
-                    </span>
-                  </div>
-                  <span class="ah-toggle">{{ showGapDetail ? '收起 ▲' : '展开 ▼' }}</span>
-                </div>
-                <div v-show="showGapDetail" class="ah-detail">
-                  <div v-for="(g, i) in (assessment.gap_validation || [])" :key="i" class="ah-detail-item">
-                    <span class="ah-detail-gap">{{ g.gap }}</span>
-                    <span class="ah-badge" :class="validationBadge(g.status).cls">
-                      {{ validationBadge(g.status).text }}{{ g.status === 'ungrounded' ? '·已拦截' : '' }}
-                    </span>
-                    <span class="ah-detail-reason">{{ g.reason }}</span>
-                  </div>
-                  <div v-if="!assessment.gap_validation || assessment.gap_validation.length === 0" class="ah-detail-empty">
-                    暂无缺口校验明细
-                  </div>
-                </div>
-              </div>
-
-              <!-- 层2：学习资源校验 -->
-              <div class="ah-layer">
-                <div class="ah-layer-header" @click="showResourceDetail = !showResourceDetail">
-                  <div class="ah-layer-summary">
-                    <span class="ah-layer-tag">层2 学习资源</span>
-                    <span class="ah-summary-text">
-                      共生成 {{ resourceValidationStats.total }} 条资源 →
-                      有依据 <b class="c-ok">{{ resourceValidationStats.passed }}</b> ·
-                      部分匹配 <b class="c-warn">{{ resourceValidationStats.partial }}</b> ·
-                      无依据 <b class="c-bad">{{ resourceValidationStats.blocked }}</b> ·
-                      未知 <b class="c-skip">{{ resourceValidationStats.unknown }}</b>
-                      <span class="ah-blocked">（过滤 {{ resourceValidationStats.blocked }}）</span>
-                      <span v-if="resourceValidationStats.skipped > 0" class="ah-skipped">· 跳过校验 {{ resourceValidationStats.skipped }}</span>
-                    </span>
-                  </div>
-                  <span class="ah-toggle">{{ showResourceDetail ? '收起 ▲' : '展开 ▼' }}</span>
-                </div>
-                <div v-show="showResourceDetail" class="ah-detail">
-                  <div v-for="r in resources" :key="r.id" class="ah-detail-item">
-                    <span class="ah-detail-gap">{{ r.title }}</span>
-                    <span class="ah-badge" :class="validationBadge(r.review_status).cls">
-                      {{ validationBadge(r.review_status).text }}{{ r.review_status === 'blocked' ? '·已过滤' : '' }}
-                    </span>
-                    <span class="ah-detail-reason">{{ r.review_reason || '—' }}</span>
-                  </div>
-                  <div v-if="resources.length === 0" class="ah-detail-empty">暂无资源校验明细</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 底部操作 -->
-            <div class="actions">
-              <button class="app-btn app-btn-outline app-btn-large" @click="$router.push('/input')">
-                🔄 重新诊断
-              </button>
-            </div>
-          </div>
-
-          <!-- ===== Tab 2: 资料库 ===== -->
-          <div v-show="activeTab === 'library'" class="tab-content">
-            <!-- 资源加载中 -->
-            <div v-if="resourceLoading" class="loading-area" style="padding:60px 0">
-              <div class="loading-spinner"></div>
-              <p>加载学习资料...</p>
-            </div>
-
-            <!-- 资源为空 -->
-            <div v-else-if="visibleResources.length === 0" class="tab-placeholder">
-              <div class="placeholder-icon">📚</div>
-              <h3>暂无学习资料</h3>
-              <p>诊断完成后 AI 将根据你的知识缺口自动生成学习资料。</p>
-            </div>
-
-            <!-- 资源卡片列表 -->
-            <div v-else class="resource-grid">
-              <div
-                v-for="r in visibleResources"
-                :key="r.id"
-                class="resource-card"
-                @click="$router.push(`/resource/${r.id}`)"
-              >
-                <div class="rc-header">
-                  <span class="rc-type-icon">{{ typeIcon(r.content_type) }}</span>
-                  <span class="rc-type-tag">{{ r.content_type }}</span>
-                  <span class="rc-difficulty" v-if="r.difficulty">
-                    <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= r.difficulty }">★</span>
-                  </span>
-                </div>
-                <h4 class="rc-title">{{ r.title }}</h4>
-                <div class="rc-footer">
-                  <span class="rc-point">{{ r.knowledge_point }}</span>
-                  <span class="rc-arrow">查看 →</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ===== Tab 3: 个性化学习 ===== -->
-          <div v-show="activeTab === 'learning'" class="tab-content">
-            <!-- 路径加载中 -->
-            <div v-if="pathLoading" class="loading-area" style="padding:60px 0">
-              <div class="loading-spinner"></div>
-              <p>加载学习路径...</p>
-            </div>
-
-            <!-- 路径为空 -->
-            <div v-else-if="!currentPath" class="tab-placeholder">
-              <div class="placeholder-icon">🗺️</div>
-              <h3>暂无学习路径</h3>
-              <p>诊断完成后 AI 将自动生成个性化学习路径，请稍后刷新查看。</p>
-            </div>
-
-            <!-- 路径时间线 -->
-            <div v-else class="path-timeline-card">
-              <div class="path-status-row">
-                <span class="path-status-badge" :class="currentPath.status">
-                  {{ currentPath.status === 'active' ? '进行中' : currentPath.status === 'completed' ? '已完成' : '已放弃' }}
-                </span>
-                <span class="path-date">创建于 {{ formatPathTime(currentPath.created_at) }}</span>
-              </div>
-
-              <div class="timeline">
-                <div
-                  v-for="(step, i) in currentPath.steps"
-                  :key="step.step"
-                  class="timeline-step"
-                  :class="{ last: i === currentPath.steps.length - 1 }"
-                  @click="goToResource(step)"
-                >
-                  <div class="tl-left">
-                    <div class="tl-node" :class="step.status">
-                      <span v-if="step.status === 'completed'">✓</span>
-                      <span v-else>{{ step.step }}</span>
-                    </div>
-                    <div v-if="i < currentPath.steps.length - 1" class="tl-line" :class="{ filled: step.status === 'completed' }"></div>
-                  </div>
-                  <div class="tl-content">
-                    <div class="tl-title-row">
-                      <span class="tl-type-icon">{{ typeIcon(step.resource_type) }}</span>
-                      <span class="tl-point">{{ step.knowledge_point }}</span>
-                      <span class="tl-type-tag">{{ step.resource_type }}</span>
-                      <span v-if="step.weight === 'high'" class="tl-weight high">核心</span>
-                      <span v-else-if="step.weight === 'mid'" class="tl-weight mid">支撑</span>
-                    </div>
-                    <div class="tl-meta">
-                      <span>⏱ {{ step.estimated_time }} 分钟</span>
-                      <span v-if="step.prerequisite">📎 前置：{{ step.prerequisite }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
+        <section class="quality-strip glass-panel"><div><CircleCheck /><span>防幻觉审核</span><b>{{ resourceQualityText }}</b></div><div><Files /><span>证据链来源</span><b>{{ traceSourceCount }} 条检索依据</b></div><div><Aim /><span>校准状态</span><b>{{ calibrationStatusText }}</b></div><button type="button" @click="openLibrary">进入资料库 <ArrowRight /></button></section>
       </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getAssessment, getAssessmentProgress, type AssessmentResponse } from '@/api/assessment'
-import { getLearningPaths, type LearningPathInfo, type PathStep } from '@/api/path'
+import {
+  Aim, ArrowRight, Briefcase, CircleCheck, Connection, Cpu, DataAnalysis, DocumentChecked,
+  Files, Guide, Loading, MagicStick, MapLocation, Refresh, Search, StarFilled,
+  TrendCharts, WarningFilled,
+} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { calibrateAssessment, getAssessment, getAssessmentAgents, getAssessmentProgress, type AssessmentResponse, type RequirementScore } from '@/api/assessment'
+import { getLearningPaths, type LearningPathInfo } from '@/api/path'
 import { getResourceList, type ResourceInfo } from '@/api/resource'
+import { getJobList } from '@/api/jobs'
 import { useUserStore } from '@/stores/user'
 
-const route = useRoute()
-const router = useRouter()
-const store = useUserStore()
+const route = useRoute(); const router = useRouter(); const store = useUserStore()
+const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const demoMode = computed(() => publicPreview && route.query.demo === '1')
+const assessment = ref<AssessmentResponse | null>(null); const loading = ref(false); const loadError = ref(''); const progress = ref({ label: '正在解析学习情况', percent: 0 }); const running = ref(false)
+const radarRef = ref<HTMLDivElement | null>(null); let chart: echarts.ECharts | null = null; let progressTimer: number | null = null
+const currentPath = ref<LearningPathInfo | null>(null); const pathLoading = ref(false); const resources = ref<ResourceInfo[]>([]); const traceSourceCount = ref(0)
+const showCalibration = ref(false); const calibrationSubmitting = ref(false); const applyCorrections = ref(false); const goldScores = ref<Record<string, number | null>>({})
+const jobTitle = ref('目标岗位能力模型')
+const assessmentId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
+const overallPercent = computed(() => Math.round((assessment.value?.overall_mastery || 0) * 100)); const confidencePercent = computed(() => Math.round((assessment.value?.confidence || 0) * 100)); const formattedDate = computed(() => assessment.value ? new Date(assessment.value.created_at).toLocaleDateString('zh-CN') : '—')
+const dimensionPreview = computed(() => (assessment.value?.ability_vector || []).slice(0, 5)); const strengths = computed(() => [...(assessment.value?.ability_vector || [])].sort((a,b) => b.value - a.value).slice(0, 3)); const gaps = computed(() => assessment.value?.knowledge_gaps || []); const requirementItems = computed<RequirementScore[]>(() => assessment.value?.requirement_scores || [])
+const levelClass = computed(() => overallPercent.value >= 80 ? 'good' : overallPercent.value >= 60 ? 'partial' : 'needs'); const levelText = computed(() => overallPercent.value >= 80 ? '良好匹配' : overallPercent.value >= 60 ? '部分匹配' : '优先补强')
+const calibration = computed(() => assessment.value?.calibration_summary); const calibrationText = computed(() => calibration.value?.accuracy === null || calibration.value?.accuracy === undefined ? '待校准' : `${Math.round(calibration.value.accuracy * 100)}%`); const accuracyClass = computed(() => calibration.value?.accuracy && calibration.value.accuracy >= .9 ? 'accurate' : 'pending')
+const calibrationStatusText = computed(() => assessment.value?.calibration_status === 'passed' ? '已通过' : assessment.value?.calibration_status === 'needs_review' ? '需要复核' : '未校准')
+const resourceQualityText = computed(() => !resources.value.length ? '暂无可展示资源' : `${resources.value.filter(item => item.review_status === 'passed').length}/${resources.value.length} 已通过来源校验`)
+const traceLabel = computed(() => traceSourceCount.value ? `${traceSourceCount.value} 条依据` : '证据待加载')
+const agentSummary = computed(() => { const high = strengths.value.slice(0,2).map(item => item.name).join('、'); const low = [...(assessment.value?.ability_vector || [])].sort((a,b) => a.value - b.value)[0]?.name; if (!high && !low) return '本次诊断尚未形成完整的能力结论。'; return `你已具备较稳定的岗位基础，当前优势集中在${high || '已提交证据覆盖的能力'}。影响下一阶段竞争力的主要因素不是学习资源数量，而是${low || '复杂任务经验'}仍需补强。建议围绕能力缺口完成一次可验证的项目实践，并在复测后更新路径。` })
+const emptyDimensions = ['工程能力', '项目经验', '学习潜力', '基础能力', '软实力']
+const emptySteps: Array<{ icon: Component; title: string; detail: string }> = [
+  { icon: DocumentChecked, title: '资料审查', detail: '提取学习与项目证据' },
+  { icon: Search, title: '能力映射', detail: '对照岗位要求和达标规则' },
+  { icon: Aim, title: '交叉校验', detail: '复核结论与来源依据' },
+  { icon: Guide, title: '路径生成', detail: '输出下一阶段学习行动' },
+]
+const dimensionIcons: Component[] = [Cpu, Briefcase, TrendCharts, DataAnalysis, Connection]
 
-// ---- 评估 ID ----
-const assessmentId = computed(() => (route.params.id as string) || null)
-
-// ---- 加载评估 ----
-const assessment = ref<AssessmentResponse | null>(null)
-const loading = ref(false)
-const loadError = ref('')
-
-// ---- 诊断进度轮询 ----
-const progress = ref<{ label: string; percent: number }>({ label: '正在解析学习情况', percent: 0 })
-let progressTimer: number | null = null
-
-function stopProgressPolling() {
-  if (progressTimer !== null) {
-    clearInterval(progressTimer)
-    progressTimer = null
-  }
+const demoAssessment: AssessmentResponse = {
+  id: 'demo-assessment', user_id: 'demo-user', job_id: 'demo-backend', user_input: '本地视觉验收示例', overall_mastery: .82, confidence: .94,
+  ability_vector: [
+    { index: 0, name: '工程能力', value: .85, weight: 'high', category: 'engineering' },
+    { index: 1, name: '项目经验', value: .78, weight: 'high', category: 'project' },
+    { index: 2, name: '学习潜力', value: .88, weight: 'mid', category: 'learning' },
+    { index: 3, name: '基础能力', value: .74, weight: 'mid', category: 'foundation' },
+    { index: 4, name: '软实力', value: .80, weight: 'low', category: 'soft_skill' },
+  ],
+  knowledge_gaps: ['复杂项目经验不足，缺少大型系统实践', '系统设计与架构思维需要加强', '高并发与分布式技术广度有待拓展'],
+  gap_validation: [],
+  requirement_scores: [
+    { requirement_id: 'demo-r1', requirement_name: '工程实践', dimension: '工程能力', score: .85, status: 'qualified', evidence_ids: ['demo-e1'] },
+    { requirement_id: 'demo-r2', requirement_name: '系统设计', dimension: '项目经验', score: .72, status: 'partial', evidence_ids: ['demo-e2'] },
+    { requirement_id: 'demo-r3', requirement_name: '学习迁移', dimension: '学习潜力', score: .88, status: 'qualified', evidence_ids: ['demo-e3'] },
+  ],
+  calibration_status: 'passed',
+  calibration_summary: { status: 'passed', evaluated_count: 3, accuracy: .93, mean_absolute_error: .06 },
+  material_ids: ['demo-m1', 'demo-m2'], created_at: '2026-08-16T10:20:00+08:00',
 }
-
-function startProgressPolling() {
-  stopProgressPolling()
-  progressTimer = window.setInterval(async () => {
-    if (!assessmentId.value) return
-    try {
-      const p = await getAssessmentProgress(assessmentId.value)
-      progress.value = p
-      if (p.percent >= 100) {
-        stopProgressPolling()
-        loadAssessment()   // 诊断完成，拉取最终结果
-      }
-    } catch {
-      // 单次失败忽略，下个周期继续
-    }
-  }, 10_000)
+const demoPath: LearningPathInfo = {
+  id: 'demo-path', user_id: 'demo-user', job_id: 'demo-backend', assessment_id: 'demo-assessment', current_step: 1, status: 'active', created_at: '2026-08-16T10:20:00+08:00', updated_at: '2026-08-16T10:20:00+08:00',
+  steps: [
+    { step: 1, knowledge_point: '夯实工程基础', resource_type: '讲义 + 实操', resource_id: null, estimated_time: 120, prerequisite: null, status: 'current', record_id: null, weight: 'high' },
+    { step: 2, knowledge_point: '项目进阶', resource_type: '项目任务书', resource_id: null, estimated_time: 180, prerequisite: '夯实工程基础', status: 'pending', record_id: null, weight: 'high' },
+    { step: 3, knowledge_point: '综合突破', resource_type: '阶段复测', resource_id: null, estimated_time: 90, prerequisite: '项目进阶', status: 'pending', record_id: null, weight: 'mid' },
+  ],
 }
+const demoResources: ResourceInfo[] = [0,1,2].map(index => ({ id: `demo-resource-${index}`, assessment_id: 'demo-assessment', knowledge_point: ['系统设计基础','并发编程','项目复盘'][index], content_type: ['讲义','实操任务','错题解析'][index], title: ['系统设计核心概念','并发任务实战','项目问题复盘'][index], body: '仅用于本地视觉验收的示例资料。', difficulty: index + 2, source_chunk_id: `demo-source-${index}`, source_text: '本地视觉示例来源', review_status: 'passed', review_reason: '示例已通过', display_status: 'visible', generation_method: 'demo', created_at: '2026-08-16T10:20:00+08:00' }))
 
+function toPercent(value: number) { return Math.round(value * 100) }
+function dimensionIcon(index: number) { return dimensionIcons[index % dimensionIcons.length] }
+function moveSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; const rect = element.getBoundingClientRect(); element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`); element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`) }
+function openLibrary() { if (!assessment.value) return; router.push({ path: '/library', query: demoMode.value ? { demo: '1' } : { assessment: assessment.value.id } }) }
+async function loadDemoFixture() { stopPolling(); loading.value = false; loadError.value = ''; running.value = false; assessment.value = demoAssessment; jobTitle.value = '后端开发工程师'; currentPath.value = demoPath; resources.value = demoResources; traceSourceCount.value = 12; await nextTick(); renderRadar() }
 async function loadAssessment() {
-  if (!assessmentId.value) return
-  loading.value = true
-  loadError.value = ''
-  try {
-    assessment.value = await getAssessment(assessmentId.value)
-    // 诊断未完成 → 轮询进度；已完成 → 停轮询
-    if (assessment.value.overall_mastery === null) {
-      startProgressPolling()
-    } else {
-      stopProgressPolling()
-    }
-    nextTick(() => renderChart())  // 雷达图立即渲染
-    loading.value = false          // 立即显示结果区（含雷达图）
-    loadPath()                     // 路径、资料后台异步加载，互不阻塞
-  } catch (e: any) {
-    const detail = e?.response?.data?.detail
-    loadError.value = typeof detail === 'string' ? detail : '加载诊断结果失败'
-    loading.value = false
-  }
+  if (demoMode.value) { await loadDemoFixture(); return }
+  if (!assessmentId.value) { if (!publicPreview && !store.userInfo) await store.fetchUserInfo().catch(() => undefined); const latest = store.userInfo?.latest_assessment_id; if (latest) { await router.replace(`/diagnosis/${latest}`); return }; assessment.value = null; currentPath.value = null; resources.value = []; traceSourceCount.value = 0; return }
+  loading.value = true; loadError.value = ''
+  try { const item = await getAssessment(assessmentId.value); assessment.value = item; jobTitle.value = '目标岗位能力模型'; getJobList().then(jobs => { jobTitle.value = jobs.find(job => job.id === item.job_id)?.job_title || '目标岗位能力模型' }).catch(() => undefined); running.value = item.overall_mastery === null; if (running.value) startPolling(); else { stopPolling(); await Promise.all([loadPath(), loadResources(), loadTrace()]); nextTick(renderRadar) } } catch (error: any) { loadError.value = error?.response?.data?.detail || '无法读取诊断结果' } finally { loading.value = false }
 }
-
-// 路由参数变化时重新加载；无 ID 时自动跳转到最近诊断
-watch(assessmentId, async () => {
-  if (assessmentId.value) {
-    loadAssessment()
-  } else {
-    // 确保 userInfo 已加载（登录时可能未成功写入 store）
-    if (!store.userInfo && store.isLoggedIn) {
-      try { await store.fetchUserInfo() } catch {}
-    }
-    const latestId = store.userInfo?.latest_assessment_id
-    if (latestId) {
-      router.replace(`/diagnosis/${latestId}`)
-    } else {
-      assessment.value = null
-    }
-  }
-}, { immediate: true })
-
-// 切换诊断记录时销毁旧图表实例，避免指向已销毁的 DOM 容器
-watch(assessmentId, () => {
-  stopProgressPolling()
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
-  // 清空上一记录的数据，避免闪现旧内容
-  currentPath.value = null
-  resources.value = []
-})
-
-// ---- 学习路径 ----
-const currentPath = ref<LearningPathInfo | null>(null)
-const pathLoading = ref(false)
-
-async function loadPath() {
-  if (!assessment.value) return
-  // 确保 userInfo 已加载
-  if (!store.userInfo && store.isLoggedIn) {
-    try { await store.fetchUserInfo() } catch {}
-  }
-  if (!store.userInfo) return
-  pathLoading.value = true
-  try {
-    const paths = await getLearningPaths(store.userInfo.id)
-    // 匹配当前诊断对应的路径（按 assessment_id 精确隔离）
-    currentPath.value = paths.find(p => p.assessment_id === assessment.value!.id) || null
-  } catch {
-    currentPath.value = null
-  } finally {
-    pathLoading.value = false
-  }
-  loadResources()  // 路径就绪后再加载资源（资源过滤依赖路径知识点）
-}
-
-// ---- 学习资料 ----
-const resources = ref<ResourceInfo[]>([])
-const resourceLoading = ref(false)
-
-async function loadResources() {
-  if (!assessment.value) return
-  resourceLoading.value = true
-  try {
-    // 后端按 assessment_id 隔离，只拉当前这次诊断的资源
-    const all = await getResourceList({ assessment_id: assessment.value.id })
-    // 用路径的知识点过滤资源（资源是按路径知识点生成的，两者天然对齐）
-    const pathPoints = new Set(
-      currentPath.value?.steps?.map(s => s.knowledge_point) || []
-    )
-    const gaps = new Set(assessment.value.knowledge_gaps || [])
-    const seen = new Map<string, ResourceInfo>()
-    // 优先匹配路径知识点，其次匹配 knowledge_gaps
-    all
-      .filter(r => pathPoints.has(r.knowledge_point) || gaps.has(r.knowledge_point))
-      .forEach(r => {
-        const key = `${r.knowledge_point}:${r.content_type}`
-        if (!seen.has(key)) seen.set(key, r)
-      })
-    resources.value = [...seen.values()]
-  } catch {
-    resources.value = []
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-// ---- 防幻觉校验 ----
-const VALIDATION_STATUS: Record<string, { text: string; cls: string }> = {
-  grounded: { text: '有依据', cls: 'ok' },
-  passed: { text: '有依据', cls: 'ok' },
-  partial: { text: '部分匹配', cls: 'warn' },
-  ungrounded: { text: '无依据', cls: 'bad' },
-  blocked: { text: '无依据', cls: 'bad' },
-  skipped: { text: '跳过校验', cls: 'skip' },
-}
-
-function validationBadge(status: string | null): { text: string; cls: string } {
-  return VALIDATION_STATUS[status || ''] || { text: status || '未知', cls: 'skip' }
-}
-
-const gapValidationStats = computed(() => {
-  const items = assessment.value?.gap_validation || []
-  return {
-    total: items.length,
-    grounded: items.filter(g => g.status === 'grounded').length,
-    partial: items.filter(g => g.status === 'partial').length,
-    ungrounded: items.filter(g => g.status === 'ungrounded').length,
-  }
-})
-
-const resourceValidationStats = computed(() => {
-  const items = resources.value
-  const known = new Set(['passed', 'partial', 'blocked', 'skipped'])
-  return {
-    total: items.length,
-    passed: items.filter(r => r.review_status === 'passed').length,
-    partial: items.filter(r => r.review_status === 'partial').length,
-    blocked: items.filter(r => r.review_status === 'blocked').length,
-    skipped: items.filter(r => r.review_status === 'skipped').length,
-    unknown: items.filter(r => !r.review_status || !known.has(r.review_status)).length,
-  }
-})
-
-// 展示层过滤掉被拦截（blocked）和隐藏（hide）的资源；统计仍基于完整 resources
-const visibleResources = computed(() =>
-  resources.value.filter(r => r.review_status !== 'blocked' && r.display_status !== 'hide'),
-)
-
-function formatPathTime(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-function typeIcon(t: string): string {
-  return { '讲义': '📖', '练习': '✏️', '案例': '📋', '视频脚本': '🎬' }[t] || '📄'
-}
-
-function goToResource(step: PathStep) {
-  if (step.resource_id) {
-    router.push(`/resource/${step.resource_id}`)
-  }
-}
-
-// ---- 掌握度分级 ----
-const masteryLevelClass = computed(() => {
-  if (!assessment.value) return ''
-  const s = assessment.value.overall_mastery
-  if (s >= 0.8) return 'high'
-  if (s >= 0.6) return 'mid'
-  return 'low'
-})
-
-const masteryLevelText = computed(() => {
-  if (!assessment.value) return ''
-  const s = assessment.value.overall_mastery
-  if (s >= 0.8) return '已达标'
-  if (s >= 0.6) return '部分达标'
-  return '未达标'
-})
-
-// ---- 时间格式化 ----
-function formatTime(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-// ---- Tab 切换 ----
-const tabs = [
-  { key: 'diagnosis', label: '诊断结果' },
-  { key: 'library', label: '资料库' },
-  { key: 'learning', label: '个性化学习' },
-] as const
-const activeTab = ref<string>('diagnosis')
-
-// ---- 用户输入折叠展示 ----
-const showInput = ref(false)
-
-// ---- 防幻觉校验展开状态 ----
-const showGapDetail = ref(false)
-const showResourceDetail = ref(false)
-
-// ---- 雷达图 ----
-const chartRef = ref<HTMLDivElement | null>(null)
-let chartInstance: echarts.ECharts | null = null
-
-function renderChart() {
-  console.log('[雷达图] renderChart 调用', {
-    hasChartRef: !!chartRef.value,
-    hasAssessment: !!assessment.value,
-    dimsCount: assessment.value?.ability_vector?.length,
-    activeTab: activeTab.value,
-  })
-
-  if (!chartRef.value) { console.warn('[雷达图] chartRef 不存在，跳过'); return }
-  if (!assessment.value) { console.warn('[雷达图] assessment 不存在，跳过'); return }
-
-  const dims = assessment.value.ability_vector
-  console.log('[雷达图] ability_vector 维度数:', dims?.length, '示例:', dims?.[0])
-
-  if (!dims || dims.length === 0) {
-    console.warn('[雷达图] ability_vector 为空，跳过')
-    return
-  }
-
-  if (!chartInstance) {
-    console.log('[雷达图] 初始化 ECharts 实例')
-    chartInstance = echarts.init(chartRef.value)
-  }
-
-  // 按权重给每条轴着色
-  const weightColors = { high: '#dc2626', mid: '#f59e0b', low: '#2563eb' }
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: any) => {
-        const dim = dims[params.dimensionIndex]
-        if (!dim) return params.name
-        const weightLabel = { high: '高权重', mid: '中权重', low: '低权重' }[dim.weight]
-        return `<b>${params.name}</b><br/>得分：${(dim.value * 100).toFixed(0)}<br/>权重：${weightLabel}<br/>类别：${dim.category}`
-      },
-    },
-    radar: {
-      center: ['50%', '55%'],
-      radius: '65%',
-      axisName: { fontSize: 12, color: '#555' },
-      indicator: dims.map(d => ({
-        name: d.name,
-        max: 1,
-        color: weightColors[d.weight] || '#555',
-      })),
-    },
-    series: [
-      {
-        type: 'radar',
-        symbol: 'circle',
-        symbolSize: 6,
-        lineStyle: { width: 2, color: '#2563eb' },
-        areaStyle: { color: 'rgba(37, 99, 235, 0.12)' },
-        itemStyle: { color: '#2563eb' },
-        data: [{ value: dims.map(d => d.value), name: '能力值' }],
-      },
-    ],
-  }
-
-  chartInstance.setOption(option)
-  console.log('[雷达图] setOption 完成，indicator 数量:', dims.length)
-}
-
-// 数据就绪后渲染图表
-watch(() => assessment.value?.ability_vector, () => {
-  nextTick(() => renderChart())
-})
-
-// 切换到"诊断结果"tab 时重绘雷达图（解决 DOM 未渲染时初始化失败的问题）
-watch(activeTab, (tab) => {
-  if (tab === 'diagnosis') {
-    nextTick(() => renderChart())
-  }
-})
-
-// 窗口大小变化时重绘
-function handleResize() {
-  chartInstance?.resize()
-}
-window.addEventListener('resize', handleResize)
-
-onBeforeUnmount(() => {
-  stopProgressPolling()
-  window.removeEventListener('resize', handleResize)
-  chartInstance?.dispose()
-})
+async function startPolling() { stopPolling(); await pollProgress(); progressTimer = window.setInterval(pollProgress, 2500) }
+async function pollProgress() { if (!assessmentId.value) return; try { progress.value = await getAssessmentProgress(assessmentId.value); if (progress.value.percent >= 100) { stopPolling(); await loadAssessment() } } catch { /* next verified polling cycle retries */ } }
+function stopPolling() { if (progressTimer !== null) { window.clearInterval(progressTimer); progressTimer = null } }
+async function loadPath() { if (!assessment.value) return; if (!store.userInfo) await store.fetchUserInfo().catch(() => undefined); if (!store.userInfo) return; pathLoading.value = true; try { const paths = await getLearningPaths(store.userInfo.id); currentPath.value = paths.find(path => path.assessment_id === assessment.value?.id) || null } finally { pathLoading.value = false } }
+async function loadResources() { if (!assessment.value) return; try { resources.value = await getResourceList({ assessment_id: assessment.value.id }) } catch { resources.value = [] } }
+async function loadTrace() { if (!assessment.value) return; try { const response = await getAssessmentAgents(assessment.value.id); traceSourceCount.value = response.trace.retrieval_sources?.length || 0 } catch { traceSourceCount.value = 0 } }
+function renderRadar() { const dims = assessment.value?.ability_vector || []; if (!radarRef.value || !dims.length) return; chart?.dispose(); chart = echarts.init(radarRef.value); chart.setOption({ animationDuration: 780, tooltip: { trigger: 'item', formatter: (params: any) => `${params.name || '能力向量'}<br/>${params.value?.map((value: number, index: number) => `${dims[index]?.name} ${toPercent(value)}`).join('<br/>') || ''}` }, radar: { center: ['50%','53%'], radius: '65%', splitNumber: 4, axisName: { color: '#4e7460', fontSize: 10 }, splitArea: { areaStyle: { color: ['rgba(222,250,222,.08)','rgba(222,250,222,.19)'] } }, splitLine: { lineStyle: { color: 'rgba(12,150,76,.18)' } }, axisLine: { lineStyle: { color: 'rgba(12,150,76,.22)' } }, indicator: dims.map(item => ({ name: item.name, max: 1 })) }, series: [{ type: 'radar', symbol: 'circle', symbolSize: 5, lineStyle: { color: '#079455', width: 2 }, itemStyle: { color: '#079455' }, areaStyle: { color: new echarts.graphic.RadialGradient(.5,.5,.68,[{ offset: 0, color: 'rgba(39,200,115,.43)' }, { offset: 1, color: 'rgba(222,250,222,.09)' }]) }, data: [{ value: dims.map(item => item.value), name: '能力得分' }] }] }) }
+async function submitCalibration() { if (!assessment.value || demoMode.value) return; const labels = requirementItems.value.map(item => ({ requirement_id: item.requirement_id, gold_score: goldScores.value[item.requirement_id], source_type: 'expert', trusted: true })).filter(item => typeof item.gold_score === 'number' && Number.isFinite(item.gold_score)); if (!labels.length) { ElMessage.warning('至少录入一项真实结果分数'); return }; calibrationSubmitting.value = true; try { await calibrateAssessment(assessment.value.id, { gold_labels: labels, apply_corrections: applyCorrections.value }); ElMessage.success('真实结果校准完成'); await loadAssessment(); showCalibration.value = false } catch (error: any) { ElMessage.error(error?.response?.data?.detail || '校准失败') } finally { calibrationSubmitting.value = false } }
+function handleResize() { chart?.resize() }
+watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); chart = null; loadAssessment() }, { immediate: true }); window.addEventListener('resize', handleResize); onBeforeUnmount(() => { stopPolling(); chart?.dispose(); window.removeEventListener('resize', handleResize) })
 </script>
 
 <style scoped>
-.diagnosis-page {
-  min-height: calc(100vh - 64px);
-  background: #f5f7fa;
-}
+.diagnosis-page { background: radial-gradient(circle at 50% 36%, rgba(222,250,222,.62), transparent 41%), radial-gradient(circle at 83% 13%, rgba(134,231,177,.1), transparent 27%), linear-gradient(180deg,#fdfffe 0%,#f5fbf7 100%); }
+.diagnosis-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
+.diagnosis-heading .page-title { display: flex; align-items: center; gap: 9px; }
+.diagnosis-heading .page-title svg { width: 26px; color: var(--green-accent); }
+.heading-actions { display: flex; gap: 10px; }
+.top-action { height: 40px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.66); color: var(--ink-soft); font-size: 12px; cursor: pointer; }
+.top-action svg { width: 15px; }
+.top-action.primary { border-color: rgba(14,155,79,.2); color: var(--green-deep); background: rgba(237,255,244,.67); }
+.top-action:disabled { opacity: .5; cursor: not-allowed; }
+.diagnosis-loading { min-height: 430px; position: relative; overflow: hidden; display: grid; place-items: center; border-radius: var(--radius-xl); text-align: center; }
+.diagnosis-loading img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; opacity: .72; }
+.loading-copy { z-index: 2; padding: 25px; }
+.loading-copy h2 { margin: 17px 0 8px; font-size: 21px; }
+.loading-copy p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.loading-copy .glass-pill svg { width: 14px; animation: spin 1.2s linear infinite; }
+.loading-track { width: 340px; max-width: 80vw; height: 7px; margin: 21px auto 0; border-radius: 99px; overflow: hidden; background: rgba(19,133,72,.11); }
+.loading-track i { display: block; height: 100%; border-radius: inherit; background: var(--gradient-progress); transition: width .4s; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.diagnosis-error { padding: 28px; display: flex; align-items: center; gap: 15px; border-radius: var(--radius-lg); }
+.diagnosis-error > svg { width: 28px; color: #c88821; }
+.diagnosis-error h2 { margin: 0 0 5px; font-size: 17px; }
+.diagnosis-error p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.diagnosis-error button { margin-left: auto; border: 0; border-radius: 11px; padding: 10px 13px; background: var(--gradient-primary); color: #fff; cursor: pointer; }
 
-/* ---- 顶部渐变 ---- */
-.diagnosis-hero {
-  padding: 36px 80px 0;
-  background: var(--hero-gradient);
-  text-align: center;
-}
+.empty-diagnostic { min-height: 560px; padding: 24px; overflow: hidden; border-radius: var(--radius-xl); }
+.empty-visual-grid { min-height: 430px; display: grid; grid-template-columns: .72fr 1.65fr .8fr; align-items: center; gap: 18px; }
+.empty-match-preview, .empty-dimension-preview { min-height: 255px; padding: 22px; border-radius: 21px; border: 1px solid rgba(255,255,255,.84); background: rgba(255,255,255,.48); box-shadow: inset 0 1px 1px #fff; }
+.empty-label { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.empty-match-preview strong { display: block; margin-top: 25px; color: var(--ink-faint); font-size: 54px; line-height: 1; }
+.empty-match-preview small { color: var(--ink-faint); font-size: 10px; }
+.empty-glass-orb { width: 78px; height: 78px; margin: 25px auto 0; display: grid; place-items: center; border-radius: 50%; color: var(--green-deep); background: radial-gradient(circle at 35% 30%, #fff, rgba(222,250,222,.74) 45%, rgba(134,231,177,.34)); box-shadow: inset 0 1px 2px #fff, 0 13px 30px rgba(27,139,76,.1); opacity: .72; }
+.empty-glass-orb svg { width: 27px; }
+.empty-core-stage { min-height: 390px; position: relative; display: grid; place-items: center; overflow: hidden; }
+.empty-core-stage > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; opacity: .76; mask-image: radial-gradient(ellipse, #000 56%, transparent 91%); }
+.empty-core-copy { z-index: 2; width: min(470px, 84%); padding: 25px; text-align: center; border: 1px solid rgba(255,255,255,.73); border-radius: 22px; background: rgba(255,255,255,.48); backdrop-filter: blur(13px); box-shadow: 0 20px 50px rgba(25,109,62,.08), inset 0 1px 1px #fff; }
+.empty-core-copy h2 { margin: 15px 0 8px; font-size: 21px; line-height: 1.3; }
+.empty-core-copy p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.65; }
+.empty-core-copy button { min-height: 42px; margin-top: 18px; padding: 0 15px; display: inline-flex; align-items: center; gap: 8px; border-radius: 13px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.empty-core-copy button svg { width: 15px; }
+.empty-dimension-preview > div { display: grid; grid-template-columns: 66px 1fr auto; align-items: center; gap: 7px; margin-top: 17px; color: var(--ink-soft); font-size: 10px; }
+.empty-dimension-preview i { height: 5px; border-radius: 99px; background: linear-gradient(90deg, rgba(189,244,207,.64), rgba(224,238,229,.5)); }
+.empty-dimension-preview em { color: var(--ink-faint); font-size: 8px; font-style: normal; }
+.empty-process { display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line); padding-top: 20px; }
+.empty-process > div { display: grid; grid-template-columns: auto 1fr; gap: 3px 9px; padding: 0 18px; border-right: 1px solid var(--line); }
+.empty-process > div:last-child { border-right: 0; }
+.empty-process > div > span { grid-row: 1/3; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: var(--green-deep); background: rgba(222,250,222,.67); }
+.empty-process svg { width: 17px; }
+.empty-process b { font-size: 11px; }
+.empty-process small { color: var(--ink-faint); font-size: 9px; }
 
-.page-title {
-  font-size: 32px;
-  font-weight: 800;
-  color: #111827;
-  margin-bottom: 6px;
-}
+.calibration-panel { border-radius: var(--radius-lg); padding: 21px; margin-bottom: 18px; display: grid; grid-template-columns: .8fr 1.6fr; gap: 21px; align-items: start; }
+.calibration-panel h2 { font-size: 18px; margin: 12px 0 7px; }
+.calibration-panel p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.calibration-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.calibration-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--ink-soft); }
+.calibration-fields input { width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.65); outline: none; color: var(--ink); }
+.calibration-actions { grid-column: 2; display: flex; justify-content: space-between; align-items: center; }
+.calibration-actions button { border: 0; border-radius: 10px; padding: 10px 13px; background: var(--gradient-primary); color: #fff; cursor: pointer; font-size: 12px; }
+.calibration-actions button:disabled { opacity: .5; }
+.correction-check { font-size: 11px; color: var(--ink-soft); }
 
-.page-desc {
-  font-size: 15px;
-  color: #666;
-}
-
-/* ---- 内容区 ---- */
-.page-content {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 0 80px 60px;
-}
-
-/* ---- 引导卡片（无 ID） ---- */
-.guide-card {
-  margin-top: 60px;
-  text-align: center;
-  background: #fff;
-  border-radius: 16px;
-  padding: 60px 40px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.guide-icon {
-  font-size: 56px;
-  margin-bottom: 16px;
-}
-
-.guide-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 12px;
-}
-
-.guide-desc {
-  font-size: 15px;
-  color: #666;
-  line-height: 1.7;
-  max-width: 480px;
-  margin: 0 auto 28px;
-}
-
-/* ---- 加载中 ---- */
-.loading-area {
-  margin-top: 60px;
-  text-align: center;
-  color: #666;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #e5e7eb;
-  border-top-color: #2563eb;
-  border-radius: 50%;
-  animation: app-spin 0.7s linear infinite;
-  margin: 0 auto 16px;
-}
-
-/* ---- 诊断中（未出结果） ---- */
-.pending-card {
-  margin-top: 40px;
-  text-align: center;
-  background: #fff;
-  border-radius: 16px;
-  padding: 60px 40px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.pending-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  animation: pending-hourglass 4s ease-in-out infinite;
-}
-
-@keyframes pending-hourglass {
-  0%   { transform: rotate(0deg); }
-  50%  { transform: rotate(180deg); }
-  100% { transform: rotate(0deg); }
-}
-
-.pending-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 10px;
-}
-
-.pending-label {
-  font-size: 15px;
-  color: #2563eb;
-  font-weight: 600;
-  margin-bottom: 20px;
-}
-
-.pending-progress-wrap {
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-.pending-percent {
-  font-size: 14px;
-  color: #888;
-  margin-top: 12px;
-}
-
-/* ---- Tab 栏 ---- */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  background: #fff;
-  border-radius: 12px;
-  padding: 4px;
-  margin-top: 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 10px 0;
-  border: none;
-  background: none;
-  font-size: 15px;
-  color: #888;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: all 0.3s;
-  font-family: inherit;
-}
-
-.tab-btn.active {
-  background: #2563eb;
-  color: #fff;
-  font-weight: 600;
-}
-
-.tab-btn:hover:not(.active) {
-  color: #555;
-}
-
-/* ---- Tab 内容 ---- */
-.tab-content {
-  margin-top: 24px;
-}
-
-/* ---- 概览行 ---- */
-.overview-row {
+.core-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.overview-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.overview-label {
-  font-size: 15px;
-  color: #888;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-/* ---- 提示问号圈 ---- */
-.help-circle {
-  display: inline-flex;
+  grid-template-columns: minmax(220px, 280px) minmax(520px, 1fr) minmax(220px, 280px);
+  gap: clamp(16px, 1.25vw, 22px);
   align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid #c0c4cc;
-  color: #909399;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: help;
-  margin-left: 4px;
-  vertical-align: middle;
-  line-height: 1;
-  user-select: none;
-}
-
-.help-circle:hover {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: #eef2ff;
-}
-
-/* ---- 提示浮层内容 ---- */
-.tip-box {
-  max-width: 260px;
-  line-height: 1.6;
-  text-align: left;
-}
-
-.tip-box-wide {
-  max-width: 360px;
-}
-
-.tip-title {
-  font-weight: 700;
-  margin-bottom: 6px;
-  font-size: 14px;
-  color: #111827;
-}
-
-.tip-box p {
-  margin: 0 0 6px;
-  font-size: 12.5px;
-  color: #555;
-}
-
-.tip-box p b {
-  color: #111827;
-}
-
-.tip-diff {
-  margin-top: 6px !important;
-  padding-top: 6px;
-  border-top: 1px solid #eee;
-  color: #d97706 !important;
-}
-
-/* ---- 掌握度圆环（CSS only） ---- */
-.mastery-ring {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  margin: 0 auto 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  /* conic-gradient 做环形进度 */
-  --pct: 0;
-  background: conic-gradient(#2563eb calc(var(--pct) * 360deg), #e5e7eb 0deg);
-}
-
-.mastery-ring::after {
-  content: '';
-  position: absolute;
-  width: 104px;
-  height: 104px;
-  border-radius: 50%;
-  background: #fff;
-}
-
-.mastery-value {
-  position: relative;
-  z-index: 1;
-  font-size: 36px;
-  font-weight: 800;
-  color: #111827;
-  line-height: 1;
-}
-
-.mastery-unit {
-  position: relative;
-  z-index: 1;
-  font-size: 14px;
-  color: #888;
-}
-
-.mastery-tag {
-  text-align: center;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 4px 16px;
-  border-radius: 20px;
-  display: inline-block;
-  margin: 0 auto;
-  width: fit-content;
-}
-
-.mastery-tag.high {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.mastery-tag.mid {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.mastery-tag.low {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.mastery-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* ---- 元数据卡片 ---- */
-.meta-card {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  justify-content: center;
-}
-
-.meta-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 8px;
-}
-
-.meta-label {
-  font-size: 14px;
-  color: #888;
-}
-
-.meta-value {
-  font-size: 16px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.meta-value.warn {
-  color: #dc2626;
-}
-
-/* ---- 图表卡片 ---- */
-.chart-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 28px 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  margin-bottom: 24px;
-}
-
-/* ---- 用户输入卡片（可折叠） ---- */
-.input-review-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  margin-bottom: 24px;
-}
-
-.irc-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-}
-
-.irc-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.irc-toggle {
-  font-size: 13px;
-  color: #2563eb;
-}
-
-.irc-body {
-  margin-top: 12px;
-  padding: 14px 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #444;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.card-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 4px;
-}
-
-.card-subtitle {
-  font-size: 13px;
-  color: #999;
-  margin-bottom: 16px;
-}
-
-.radar-chart {
   width: 100%;
-  height: 420px;
 }
-
-/* ---- 知识缺口 ---- */
-.gaps-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 28px 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  margin-bottom: 24px;
+.core-grid > * { min-width: 0; max-width: 100%; }
+.match-card, .dimension-card {
+  min-height: 366px;
+  padding: clamp(20px, 1.45vw, 25px);
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(145deg, rgba(255,255,255,.62), rgba(245,255,249,.38) 54%, rgba(189,244,207,.15)), rgba(250,255,252,.42);
+  box-shadow: 0 27px 66px rgba(21,88,54,.09), inset 0 1px 1px rgba(255,255,255,.97), inset 0 -1px 1px rgba(36,164,91,.035);
+  backdrop-filter: blur(31px) saturate(154%);
 }
-
-.gaps-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.gap-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fef2f2;
-  border-radius: 8px;
-  border-left: 3px solid #fca5a5;
-}
-
-.gap-index {
-  width: 24px;
-  height: 24px;
-  background: #fca5a5;
-  color: #fff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.gap-text {
-  font-size: 14px;
-  color: #991b1b;
-  line-height: 1.7;
-}
-
-/* ---- 底部操作 ---- */
-.actions {
-  display: flex;
-  gap: 16px;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-/* ---- 占位 Tab ---- */
-.tab-placeholder {
-  margin-top: 24px;
-  background: #fff;
-  border-radius: 16px;
-  padding: 80px 40px;
-  text-align: center;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.placeholder-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.tab-placeholder h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 10px;
-}
-
-.tab-placeholder p {
-  color: #999;
-  font-size: 14px;
-}
-
-/* ---- 学习路径时间线 ---- */
-.path-timeline-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 28px 32px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-}
-
-.path-status-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.path-status-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 12px;
-}
-
-.path-status-badge.active {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.path-status-badge.completed {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.path-status-badge.abandoned {
-  background: #f3f4f6;
-  color: #888;
-}
-
-.path-date {
-  font-size: 13px;
-  color: #999;
-}
-
-.timeline {
-  padding-left: 4px;
-}
-
-.timeline-step {
-  display: flex;
-  gap: 16px;
-}
-
-.timeline-step:not(.last) {
-  padding-bottom: 4px;
-}
-
-.tl-left {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.tl-node {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-  background: #f0f0f0;
-  color: #999;
-  transition: all 0.3s;
-}
-
-.tl-node.completed {
-  background: #16a34a;
-  color: #fff;
-}
-
-.tl-node.in_progress {
-  background: #2563eb;
-  color: #fff;
-}
-
-.tl-line {
-  width: 2px;
-  flex: 1;
-  min-height: 28px;
-  background: #e5e7eb;
-  transition: background 0.3s;
-}
-
-.tl-line.filled {
-  background: #16a34a;
-}
-
-.tl-content {
-  flex: 1;
-  padding: 6px 0 16px;
-}
-
-.tl-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tl-type-icon {
-  font-size: 16px;
-}
-
-.tl-point {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.tl-type-tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: #f3f4f6;
-  color: #666;
-  border-radius: 4px;
-}
-
-.tl-weight {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-}
-
-.tl-weight.high {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.tl-weight.mid {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.tl-meta {
-  display: flex;
-  gap: 16px;
-  margin-top: 6px;
-  font-size: 13px;
-  color: #999;
-}
-
-/* ---- 资源卡片网格 ---- */
-.resource-grid {
+.card-heading { display: flex; align-items: center; justify-content: space-between; }
+.card-heading > svg { width: 21px; color: var(--green-deep); }
+.card-eyebrow { color: var(--ink); font-size: 14px; font-weight: 800; }
+.match-card p { margin: 38px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.match-card > strong { display: block; margin-top: 10px; font-size: 59px; line-height: 1; }
+.match-card > strong small { font-size: 22px; }
+.match-badge { display: inline-flex; align-items: center; gap: 6px; width: max-content; margin-top: 15px; padding: 7px 10px; border-radius: 99px; background: rgba(236,255,243,.78); color: var(--green-deep); font-size: 11px; font-weight: 700; }
+.match-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.match-badge.needs { color: #a85c21; background: #fff3df; }
+.match-insight { display: flex; align-items: center; justify-content: space-between; margin-top: 31px; padding: 13px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: 10px; }
+.match-insight b { color: var(--green-deep); font-size: 14px; }
+.match-card footer { margin-top: 13px; color: var(--ink-faint); font-size: 10px; }
+.diagnostic-core {
+  --spot-x: 50%;
+  --spot-y: 50%;
+  width: 100%;
+  min-width: 0;
+  min-height: 426px;
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.resource-card {
-  background: #fff;
-  border: 1px solid #f0f0f0;
-  border-radius: 12px;
-  padding: 20px 24px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.resource-card:hover {
-  border-color: #2563eb;
-  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
-  transform: translateY(-1px);
-}
-
-.rc-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.rc-type-icon {
-  font-size: 20px;
-}
-
-.rc-type-tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: #eef2ff;
-  color: #2563eb;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.rc-difficulty {
-  margin-left: auto;
-  display: flex;
-  gap: 1px;
-}
-
-.star {
-  font-size: 13px;
-  color: #e5e7eb;
-}
-
-.star.on {
-  color: #f59e0b;
-}
-
-.rc-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 10px;
-  line-height: 1.4;
-}
-
-.rc-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.rc-point {
-  font-size: 12px;
-  color: #888;
-  background: #f5f7fa;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.rc-arrow {
-  font-size: 13px;
-  color: #2563eb;
-}
-
-/* ---- 防幻觉校验汇总卡 ---- */
-.anti-hallucination-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 28px 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  margin-bottom: 24px;
-}
-
-.ah-layer {
-  border: 1px solid #f0f0f0;
-  border-radius: 10px;
-  margin-top: 12px;
+  place-items: center;
   overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
+  border: 1px solid rgba(255,255,255,.58);
+  border-radius: 34px;
+  background: linear-gradient(145deg, rgba(255,255,255,.22), rgba(222,250,222,.08));
+  box-shadow: 0 30px 82px rgba(17,107,59,.095), inset 0 1px 1px rgba(255,255,255,.74);
+  backdrop-filter: blur(12px) saturate(126%);
 }
-
-.ah-layer-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.ah-layer-header:hover {
-  background: #fafbfc;
-}
-
-.ah-layer-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.ah-layer-tag {
-  font-size: 13px;
-  font-weight: 700;
-  color: #111827;
-  background: #eef2ff;
-  padding: 3px 10px;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-
-.ah-summary-text {
-  font-size: 14px;
-  color: #555;
-}
-
-.ah-summary-text b {
-  font-weight: 700;
-}
-
-.c-ok { color: #16a34a; }
-.c-warn { color: #d97706; }
-.c-bad { color: #dc2626; }
-.c-skip { color: #888; }
-
-.ah-blocked {
-  color: #dc2626;
-  font-weight: 600;
-}
-
-.ah-skipped {
-  color: #999;
-  font-size: 13px;
-}
-
-.ah-toggle {
-  font-size: 13px;
-  color: #2563eb;
-  flex-shrink: 0;
-  margin-left: 12px;
-}
-
-.ah-detail {
-  border-top: 1px solid #f0f0f0;
-  padding: 8px 16px 12px;
-}
-
-.ah-detail-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 0;
-  font-size: 13px;
-  border-bottom: 1px dashed #f0f0f0;
-}
-
-.ah-detail-item:last-child {
-  border-bottom: none;
-}
-
-.ah-detail-gap {
-  font-weight: 600;
-  color: #111827;
-  flex-shrink: 0;
-  max-width: 220px;
+.diagnostic-core::before { content: ''; position: absolute; inset: 5% 4% 1%; z-index: 1; border-radius: 44%; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(109,226,156,.13) 68%, rgba(255,255,255,.21)); filter: blur(25px); opacity: .76; }
+.diagnostic-core::after { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(min(240px, 30vw) circle at var(--spot-x) var(--spot-y), rgba(255,255,255,.35), transparent 68%); }
+.diagnostic-platform { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; max-width: 100%; object-fit: cover; object-position: center; mix-blend-mode: multiply; opacity: .78; mask-image: radial-gradient(ellipse, #000 62%, transparent 92%); filter: saturate(.96) contrast(1.02); }
+.core-glass {
+  z-index: 3;
+  width: min(740px, calc(100% - 46px));
+  max-width: 100%;
+  min-width: 0;
+  min-height: 338px;
+  padding: 20px clamp(18px, 2vw, 26px) 17px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 26px;
+  background: linear-gradient(142deg, rgba(255,255,255,.67), rgba(248,255,251,.36) 47%, rgba(184,246,207,.17)), rgba(252,255,253,.4);
+  box-shadow: 0 34px 78px rgba(13,111,58,.14), 0 0 42px rgba(104,228,153,.11), inset 0 1px 1px rgba(255,255,255,.99), inset 0 -1px 1px rgba(45,176,101,.045);
+  backdrop-filter: blur(35px) saturate(165%);
+  -webkit-backdrop-filter: blur(35px) saturate(165%);
 }
+.core-topline { display: grid; grid-template-columns: .72fr 1.2fr; text-align: center; color: var(--ink); font-size: 13px; font-weight: 800; }
+.core-body { display: grid; grid-template-columns: .72fr 1.2fr; align-items: center; height: 252px; }
+.score-dial { width: clamp(136px, 10vw, 155px); height: clamp(136px, 10vw, 155px); margin: auto; display: grid; place-items: center; position: relative; border-radius: 50%; background: conic-gradient(from 210deg, #079455 0deg, #45d986 var(--score), rgba(218,248,227,.78) var(--score)); box-shadow: 0 0 0 9px rgba(255,255,255,.39), 0 0 0 10px rgba(12,159,78,.08), 0 13px 28px rgba(13,124,69,.13); }
+.score-dial::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; border-top: 2px solid rgba(255,255,255,.88); transform: rotate(-28deg); }
+.score-dial > div { width: 125px; height: 125px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,.88); box-shadow: inset 0 1px 2px #fff; }
+.score-dial b { font-size: 46px; line-height: 1; }
+.score-dial small { color: var(--ink-soft); font-size: 11px; }
+.score-dial em { margin-top: 6px; color: var(--green-deep); font-size: 9px; font-style: normal; font-weight: 700; }
+.radar-chart { width: 100%; max-width: 360px; height: 225px; margin: 0 auto; }
+.core-meta { display: flex; justify-content: center; align-items: center; gap: 8px; color: var(--ink-faint); font-size: 10px; }
+.demo-badge { padding: 3px 6px; border-radius: 99px; color: var(--green-deep); background: rgba(222,250,222,.72); }
+.dimension-card { padding: 25px; }
+.dimension-head { display: flex; justify-content: space-between; align-items: center; }
+.dimension-count { color: var(--ink-faint); font-size: 10px; }
+.dimension-list { margin-top: 25px; display: flex; flex-direction: column; gap: 16px; }
+.dimension-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; align-items: center; }
+.dimension-row > div:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dimension-row b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dimension-icon { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 9px; background: rgba(222,250,222,.68); color: var(--green-deep); }
+.dimension-icon svg { width: 15px; }
+.dimension-row strong { font-size: 11px; color: var(--ink); }
+.dimension-row strong small { color: var(--ink-faint); font-weight: 500; }
+.dimension-bar { grid-column: 1/3; height: 6px; overflow: hidden; border-radius: 99px; background: rgba(44,126,80,.1); }
+.dimension-bar i { display: block; height: 100%; border-radius: inherit; background: var(--gradient-progress); transition: width .9s ease; }
 
-.ah-detail-reason {
-  color: #888;
-  flex: 1;
-  line-height: 1.5;
-}
-
-.ah-badge {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.ah-badge.ok { background: #dcfce7; color: #16a34a; }
-.ah-badge.warn { background: #fef3c7; color: #d97706; }
-.ah-badge.bad { background: #fee2e2; color: #dc2626; }
-.ah-badge.skip { background: #f3f4f6; color: #888; }
-
-.ah-detail-empty {
-  padding: 12px 0;
-  color: #999;
-  font-size: 13px;
-}
+.analysis-grid { display: grid; grid-template-columns: 1.2fr .7fr 1.12fr; gap: 14px; margin-top: 20px; }
+.evidence-insights, .agent-summary, .roadmap-card { min-height: 238px; border-radius: var(--radius-lg); padding: 20px; }
+.evidence-insights { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.evidence-insights > section { padding-right: 20px; }
+.evidence-insights > section + section { padding: 0 0 0 20px; border-left: 1px solid var(--line); }
+.evidence-insights h2, .agent-summary h2, .roadmap-card h2 { margin: 0; display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 15px; }
+.evidence-insights h2 svg, .roadmap-card h2 svg { width: 17px; color: var(--green-deep); }
+.gaps h2 svg { color: #d28c1e; }
+.evidence-insights ul { padding: 0; margin: 18px 0 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+.strengths li { display: flex; gap: 8px; align-items: flex-start; }
+.strengths li > span { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: var(--green-deep); background: rgba(222,250,222,.74); }
+.strengths li svg { width: 10px; }
+.strengths li b, .strengths li small { display: block; }
+.strengths li b { font-size: 11px; }
+.strengths li small { margin-top: 3px; color: var(--ink-soft); font-size: 9px; line-height: 1.4; }
+.gaps li { display: grid; grid-template-columns: 22px 1fr; gap: 6px; align-items: start; }
+.gaps li b { color: #c7831c; font-size: 9px; }
+.gaps li span { color: var(--ink-soft); font-size: 10px; line-height: 1.45; }
+.evidence-insights p { margin-top: 20px; color: var(--ink-soft); font-size: 11px; line-height: 1.6; }
+.agent-summary { position: relative; }
+.agent-face { display: inline-grid; place-items: center; width: 35px; height: 35px; margin-right: 7px; border-radius: 11px; background: var(--gradient-primary); color: #fff; vertical-align: middle; box-shadow: 0 7px 15px rgba(15,164,91,.19); }
+.agent-face svg { width: 18px; }
+.agent-summary h2 { display: inline-flex; }
+.agent-summary p { margin: 13px 0 10px; color: var(--ink-soft); font-size: 11px; line-height: 1.68; }
+.summary-evidence { display: flex; align-items: center; gap: 7px; padding: 8px 0; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 9px; }
+.summary-evidence svg { width: 13px; color: var(--green-deep); }
+.review-metric { padding: 8px 0; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--ink-soft); font-size: 9px; }
+.review-metric b { font-size: 10px; }
+.review-metric .accurate { color: var(--green-deep); }
+.review-metric .pending { color: #9a781d; }
+.agent-summary button { width: 100%; min-height: 34px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 10px; background: rgba(222,250,222,.72); color: var(--green-deep); cursor: pointer; font-size: 10px; font-weight: 700; }
+.agent-summary button svg { width: 13px; }
+.roadmap-heading { display: flex; align-items: center; justify-content: space-between; }
+.roadmap-heading > span { padding: 4px 7px; border-radius: 99px; background: rgba(222,250,222,.7); color: var(--green-deep); font-size: 8px; }
+.roadmap { min-height: 152px; position: relative; display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; align-items: start; margin-top: 24px; }
+.roadmap-line { position: absolute; left: 14%; right: 14%; top: 17px; height: 1px; border-top: 1px dashed rgba(34,181,107,.32); }
+.roadmap-step { z-index: 2; text-align: center; }
+.roadmap-step > span { width: 34px; height: 34px; margin: auto; display: grid; place-items: center; border-radius: 50%; background: rgba(248,255,250,.9); border: 1px solid rgba(34,181,107,.2); color: var(--green-deep); box-shadow: 0 6px 14px rgba(23,107,62,.08); font-size: 9px; font-weight: 800; }
+.roadmap-step.current > span { color: #fff; background: var(--gradient-primary); box-shadow: 0 0 0 5px rgba(222,250,222,.66), 0 9px 19px rgba(15,164,91,.2); }
+.roadmap-step > div { min-height: 84px; margin-top: 12px; padding: 11px 7px; border-radius: 12px; background: rgba(255,255,255,.45); border: 1px solid rgba(255,255,255,.83); }
+.roadmap-step b, .roadmap-step small { display: block; }
+.roadmap-step b { font-size: 10px; }
+.roadmap-step small { margin-top: 5px; color: var(--ink-soft); font-size: 8px; line-height: 1.4; }
+.path-empty { margin-top: 28px; color: var(--ink-faint); font-size: 11px; }
+.quality-strip { margin-top: 16px; padding: 14px 19px; border-radius: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; align-items: center; gap: 15px; }
+.quality-strip > div { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; padding-right: 15px; border-right: 1px solid var(--line); }
+.quality-strip > div svg { grid-row: 1/3; width: 17px; color: var(--green-deep); }
+.quality-strip span, .quality-strip b { display: block; }
+.quality-strip span { color: var(--ink-faint); font-size: 9px; }
+.quality-strip b { color: var(--green-deep); font-size: 11px; }
+.quality-strip button { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--green-deep); font-weight: 700; font-size: 11px; cursor: pointer; }
+.quality-strip button svg { width: 13px; }
+@media (max-width: 1260px) { .core-grid { grid-template-columns: minmax(220px, .72fr) minmax(520px, 1.3fr); } .dimension-card { grid-column: 1/3; min-height: auto; } .dimension-list { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; } .analysis-grid { grid-template-columns: 1fr 1fr; } .roadmap-card { grid-column: 1/3; } .empty-visual-grid { grid-template-columns: .7fr 1.4fr; } .empty-dimension-preview { grid-column: 1/3; min-height: auto; display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; } .empty-dimension-preview > .empty-label { grid-column: 1/6; } .empty-dimension-preview > div { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .diagnosis-heading { display: block; } .heading-actions { margin-top: 15px; } .diagnosis-error { display: block; } .diagnosis-error button { margin: 14px 0 0; } .empty-diagnostic { padding: 14px; } .empty-visual-grid { grid-template-columns: 1fr; } .empty-match-preview { display: none; } .empty-core-stage { min-height: 400px; } .empty-dimension-preview { grid-column: auto; display: block; } .empty-process { grid-template-columns: 1fr 1fr; gap: 15px 0; } .empty-process > div:nth-child(2) { border-right: 0; } .core-grid { grid-template-columns: 1fr; } .diagnostic-core { order: -1; min-height: 510px; } .dimension-card { grid-column: auto; } .core-glass { width: 94%; } .core-body { grid-template-columns: 1fr; height: auto; } .core-topline { display: none; } .score-dial { margin: 13px auto 0; } .radar-chart { height: 220px; } .core-meta { flex-wrap: wrap; } .dimension-list { grid-template-columns: 1fr; } .analysis-grid { grid-template-columns: 1fr; } .roadmap-card { grid-column: auto; } .evidence-insights { grid-template-columns: 1fr; } .evidence-insights > section { padding: 0; } .evidence-insights > section + section { margin-top: 20px; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); } .quality-strip { grid-template-columns: 1fr 1fr; } .quality-strip > div { border: 0; } .calibration-panel { grid-template-columns: 1fr; } .calibration-fields { grid-template-columns: 1fr 1fr; } .calibration-actions { grid-column: auto; display: block; } .calibration-actions button { margin-top: 12px; } .match-card { min-height: 290px; } }
 </style>

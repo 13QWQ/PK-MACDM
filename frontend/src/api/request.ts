@@ -40,7 +40,7 @@ request.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response
       if (status === 401) {
-        localStorage.removeItem('token')
+        setToken(null)
         // 不在登录页才跳转，避免死循环
         if (window.location.pathname !== '/login') {
           window.location.href = '/login'

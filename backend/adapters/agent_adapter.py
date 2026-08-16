@@ -13,9 +13,40 @@ from .agent_runtime import AgentRuntime
 _runtime = AgentRuntime()
 
 
-def diagnose(user_id: str, target_job: str, user_input: str) -> dict:
-    """Diagnose one free-text user description for any supported role."""
-    return _runtime.diagnose(user_id=user_id, target_job=target_job, user_input=user_input)
+def diagnose(
+    user_id: str,
+    target_job: str,
+    user_input: str,
+    gold_labels: list[dict] | None = None,
+    apply_corrections: bool = False,
+) -> dict:
+    """Diagnose one free-text description and optionally compare it with gold labels."""
+    return _runtime.diagnose(
+        user_id=user_id,
+        target_job=target_job,
+        user_input=user_input,
+        gold_labels=gold_labels,
+        apply_corrections=apply_corrections,
+    )
+
+
+def calibrate_existing(
+    user_id: str,
+    target_job: str,
+    diagnosis: dict,
+    user_input: str,
+    gold_labels: list[dict],
+    apply_corrections: bool = False,
+) -> dict:
+    """Calibrate an already stored diagnosis against reviewed outcomes."""
+    return _runtime.calibrate_existing(
+        user_id=user_id,
+        target_job=target_job,
+        diagnosis=diagnosis,
+        user_input=user_input,
+        gold_labels=gold_labels,
+        apply_corrections=apply_corrections,
+    )
 
 
 def generate_resource(knowledge_point: str, user_level: float, resource_type: str, gap_id: str = "") -> dict:

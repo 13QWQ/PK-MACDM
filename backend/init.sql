@@ -34,12 +34,67 @@ CREATE TABLE IF NOT EXISTS assessments (
     user_input TEXT,
     overall_mastery DECIMAL(5,4),
     ability_vector JSON,
+    ability_matrix JSON,
     knowledge_gaps JSON,
+    gap_validation JSON,
     confidence DECIMAL(5,4),
+    requirement_scores JSON,
+    calibration_status VARCHAR(30) DEFAULT 'unvalidated',
+    calibration_summary JSON,
+    material_ids JSON,
+    agent_trace JSON,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (job_id) REFERENCES jobs(id),
     INDEX idx_user_id (user_id)
+);
+
+-- 用户上传的学习资料：原文件与解析状态分离，只有 parsed 文本才会被送入 Agent。
+CREATE TABLE IF NOT EXISTS user_materials (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    job_id VARCHAR(36),
+    assessment_id VARCHAR(36),
+    original_name VARCHAR(255) NOT NULL,
+    storage_name VARCHAR(255),
+    content_type VARCHAR(120),
+    size_bytes INT DEFAULT 0,
+    status VARCHAR(24) NOT NULL DEFAULT 'uploaded',
+    extracted_text TEXT,
+    source_url VARCHAR(1000),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(id),
+    FOREIGN KEY (assessment_id) REFERENCES assessments(id),
+    INDEX idx_material_user (user_id),
+    INDEX idx_material_assessment (assessment_id)
+);
+
+-- 真实结果校准记录：保存 AI 判断与客观/专家结果的逐能力项差异
+CREATE TABLE IF NOT EXISTS calibration_records (
+    id VARCHAR(36) PRIMARY KEY,
+    assessment_id VARCHAR(36) NOT NULL,
+    requirement_id VARCHAR(120) NOT NULL,
+    requirement_name VARCHAR(120) NOT NULL,
+    predicted_score DECIMAL(5,4),
+    gold_score DECIMAL(5,4),
+    absolute_error DECIMAL(5,4),
+    predicted_status VARCHAR(20),
+    gold_status VARCHAR(20),
+    status VARCHAR(20) NOT NULL,
+    is_correct TINYINT DEFAULT 0,
+    trusted TINYINT DEFAULT 1,
+    source_type VARCHAR(30) DEFAULT 'expert',
+    reference_answer TEXT,
+    evidence_ids JSON,
+    details JSON,
+    calibration_version VARCHAR(60) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (assessment_id) REFERENCES assessments(id),
+    INDEX idx_calibration_assessment (assessment_id),
+    INDEX idx_calibration_requirement (requirement_id)
 );
 
 -- 学习会话表

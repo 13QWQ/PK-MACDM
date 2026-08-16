@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.resource import Resource
+from models.assessment import Assessment
 from models.user import User
 from routers.auth import get_current_user
 from adapters import vector_adapter
@@ -34,6 +35,7 @@ class SearchResponse(BaseModel):
 
 class ResourceResponse(BaseModel):
     id: str
+    assessment_id: str | None = None
     knowledge_point: str
     content_type: str
     title: str
@@ -75,7 +77,12 @@ def list_resources(
     检索原文不属于资料库展示内容；只有已经通过审核、拥有来源链且
     非历史旧资源的内容才允许从这个面向学习者的接口返回。
     """
-    q = db.query(Resource).filter(
+    # 资源无论是否按 assessment_id 查询，都必须属于当前学习者；
+    # 仅依赖前端传入 assessment_id 会留下跨账户枚举的入口。
+    q = db.query(Resource).join(
+        Assessment, Resource.assessment_id == Assessment.id
+    ).filter(
+        Assessment.user_id == current_user.id,
         Resource.review_status.in_(["passed", "partial"]),
         Resource.source_chunk_id.isnot(None),
         Resource.source_text.isnot(None),
@@ -87,6 +94,12 @@ def list_resources(
     if type:
         q = q.filter(Resource.content_type == type)
     if assessment_id:
+        assessment = db.query(Assessment).filter(
+            Assessment.id == assessment_id,
+            Assessment.user_id == current_user.id,
+        ).first()
+        if not assessment:
+            raise HTTPException(status_code=404, detail="诊断记录不存在")
         q = q.filter(Resource.assessment_id == assessment_id)
 
     candidates = q.order_by(Resource.created_at.desc()).all()
@@ -105,8 +118,11 @@ def get_resource(
     db: Session = Depends(get_db),
 ):
     """查询已审核通过的学习资源详情，不暴露被拦截或旧资源。"""
-    resource = db.query(Resource).filter(
+    resource = db.query(Resource).join(
+        Assessment, Resource.assessment_id == Assessment.id
+    ).filter(
         Resource.id == resource_id,
+        Assessment.user_id == current_user.id,
         Resource.review_status.in_(["passed", "partial"]),
         Resource.source_chunk_id.isnot(None),
         Resource.source_text.isnot(None),

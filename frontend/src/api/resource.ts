@@ -2,6 +2,7 @@ import request from './request'
 
 export interface ResourceInfo {
   id: string
+  assessment_id: string | null
   knowledge_point: string
   content_type: string
   title: string

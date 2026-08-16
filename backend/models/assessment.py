@@ -19,4 +19,9 @@ class Assessment(Base):
     knowledge_gaps = Column(JSON, nullable=True)  # 薄弱知识点
     gap_validation = Column(JSON, nullable=True)  # 缺口校验明细 [{gap, status, reason}]
     confidence = Column(Numeric(5, 4), nullable=True)
+    requirement_scores = Column(JSON, nullable=True)  # requirement_id 级别预测，供真实结果校准
+    calibration_status = Column(String(30), nullable=True, default="unvalidated")
+    calibration_summary = Column(JSON, nullable=True)
+    material_ids = Column(JSON, nullable=True)  # 本次诊断使用的资料 id 列表
+    agent_trace = Column(JSON, nullable=True)  # 可视化 Agent 执行轨迹，不保存原始密钥或模型上下文
     created_at = Column(DateTime, default=datetime.utcnow)
