@@ -94,7 +94,7 @@
             </div>
             <div class="spatial-resource-object" aria-hidden="true">
               <div class="pack-halo"></div>
-              <img src="/assets/learning-resource-cube.png" alt="" />
+              <img src="/assets/learning-resource-cube-stage.png" alt="" />
               <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
               <span class="floating-chip chip-one"><Document />讲义</span>
               <span class="floating-chip chip-two"><Monitor />实操</span>
@@ -352,4 +352,56 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 .topic-preview span,
 .resource-meta span,
 .package-tags span { backdrop-filter: blur(13px) saturate(140%); }
+
+/* Keep the generated resource object complete inside a dedicated spatial stage. */
+.learning-package {
+  grid-template-columns: minmax(0, 52fr) minmax(330px, 48fr);
+  gap: clamp(10px, 1.4vw, 24px);
+  min-height: 322px;
+  padding: 28px 26px 28px 30px;
+}
+.package-copy { max-width: 620px; }
+.spatial-resource-object {
+  width: 100%;
+  min-width: 0;
+  min-height: 266px;
+  align-self: stretch;
+  overflow: visible;
+  isolation: isolate;
+  border-radius: 22px;
+  background: radial-gradient(ellipse at 58% 52%, rgba(255,255,255,.72), rgba(222,250,222,.18) 45%, transparent 75%);
+}
+.spatial-resource-object img {
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: contain;
+  object-position: center;
+  transform: translate(-50%,-50%);
+  mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(ellipse at 52% 52%, #000 46%, rgba(0,0,0,.82) 64%, transparent 88%);
+  mask-image: radial-gradient(ellipse at 52% 52%, #000 46%, rgba(0,0,0,.82) 64%, transparent 88%);
+  filter: saturate(.98) contrast(1.03) drop-shadow(0 22px 30px rgba(25,121,67,.07));
+}
+.pack-halo { top: 54%; width: min(340px,88%); height: 190px; opacity: .72; }
+.orbit-one { width: min(390px,96%); }
+.orbit-two { width: min(290px,76%); }
+.chip-one { left: 3%; top: 22%; }
+.chip-two { right: 1%; top: 33%; }
+.chip-three { right: 11%; bottom: 9%; }
+
+@media (max-width: 1240px) {
+  .learning-package { grid-template-columns: minmax(0, 51fr) minmax(300px, 49fr); }
+}
+@media (max-width: 820px) {
+  .learning-package { grid-template-columns: 1fr; }
+  .spatial-resource-object { min-height: 230px; }
+  .spatial-resource-object img { width: 100%; height: 100%; }
+}
+@media (max-width: 520px) {
+  .spatial-resource-object { min-height: 205px; }
+  .spatial-resource-object img { width: 100%; height: 100%; }
+}
 </style>
