@@ -35,7 +35,7 @@
             <footer>基于 {{ traceSourceCount || '待加载' }} 条可追溯依据</footer>
           </article>
 
-          <article class="diagnostic-core" @pointermove="moveSpotlight">
+          <article class="diagnostic-core" @pointermove="moveSpotlight" @pointerleave="resetSpotlight">
             <img class="diagnostic-platform" src="/assets/diagnostic-platform.png" alt="绿色玻璃质感的能力诊断空间平台" />
             <div class="core-glass glass-surface">
               <div class="core-topline"><span>综合得分</span><span>能力雷达图</span></div>
@@ -142,7 +142,8 @@ const demoResources: ResourceInfo[] = [0,1,2].map(index => ({ id: `demo-resource
 
 function toPercent(value: number) { return Math.round(value * 100) }
 function dimensionIcon(index: number) { return dimensionIcons[index % dimensionIcons.length] }
-function moveSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; const rect = element.getBoundingClientRect(); element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`); element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`) }
+function moveSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; const rect = element.getBoundingClientRect(); element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`); element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`); element.style.setProperty('--spot-opacity', '.62') }
+function resetSpotlight(event: PointerEvent) { const element = event.currentTarget as HTMLElement; element.style.setProperty('--spot-x', '50%'); element.style.setProperty('--spot-y', '38%'); element.style.setProperty('--spot-opacity', '.34') }
 function openLibrary() { if (!assessment.value) return; router.push({ path: '/library', query: demoMode.value ? { demo: '1' } : { assessment: assessment.value.id } }) }
 async function loadDemoFixture() { stopPolling(); loading.value = false; loadError.value = ''; running.value = false; assessment.value = demoAssessment; jobTitle.value = '后端开发工程师'; currentPath.value = demoPath; resources.value = demoResources; traceSourceCount.value = 12; await nextTick(); renderRadar() }
 async function loadAssessment() {
@@ -157,7 +158,36 @@ function stopPolling() { if (progressTimer !== null) { window.clearInterval(prog
 async function loadPath() { if (!assessment.value) return; if (!store.userInfo) await store.fetchUserInfo().catch(() => undefined); if (!store.userInfo) return; pathLoading.value = true; try { const paths = await getLearningPaths(store.userInfo.id); currentPath.value = paths.find(path => path.assessment_id === assessment.value?.id) || null } finally { pathLoading.value = false } }
 async function loadResources() { if (!assessment.value) return; try { resources.value = await getResourceList({ assessment_id: assessment.value.id }) } catch { resources.value = [] } }
 async function loadTrace() { if (!assessment.value) return; try { const response = await getAssessmentAgents(assessment.value.id); traceSourceCount.value = response.trace.retrieval_sources?.length || 0 } catch { traceSourceCount.value = 0 } }
-function renderRadar() { const dims = assessment.value?.ability_vector || []; if (!radarRef.value || !dims.length) return; chart?.dispose(); chart = echarts.init(radarRef.value); chart.setOption({ animationDuration: 780, tooltip: { trigger: 'item', formatter: (params: any) => `${params.name || '能力向量'}<br/>${params.value?.map((value: number, index: number) => `${dims[index]?.name} ${toPercent(value)}`).join('<br/>') || ''}` }, radar: { center: ['50%','53%'], radius: '65%', splitNumber: 4, axisName: { color: '#4e7460', fontSize: 10 }, splitArea: { areaStyle: { color: ['rgba(222,250,222,.08)','rgba(222,250,222,.19)'] } }, splitLine: { lineStyle: { color: 'rgba(12,150,76,.18)' } }, axisLine: { lineStyle: { color: 'rgba(12,150,76,.22)' } }, indicator: dims.map(item => ({ name: item.name, max: 1 })) }, series: [{ type: 'radar', symbol: 'circle', symbolSize: 5, lineStyle: { color: '#079455', width: 2 }, itemStyle: { color: '#079455' }, areaStyle: { color: new echarts.graphic.RadialGradient(.5,.5,.68,[{ offset: 0, color: 'rgba(39,200,115,.43)' }, { offset: 1, color: 'rgba(222,250,222,.09)' }]) }, data: [{ value: dims.map(item => item.value), name: '能力得分' }] }] }) }
+function renderRadar() {
+  const dims = assessment.value?.ability_vector || []
+  if (!radarRef.value || !dims.length) return
+  chart?.dispose()
+  chart = echarts.init(radarRef.value)
+  chart.setOption({
+    animationDuration: 900,
+    animationEasing: 'cubicOut',
+    tooltip: { trigger: 'item', formatter: (params: any) => `${params.name || '能力向量'}<br/>${params.value?.map((value: number, index: number) => `${dims[index]?.name} ${toPercent(value)}`).join('<br/>') || ''}` },
+    radar: {
+      center: ['50%', '53%'],
+      radius: '63%',
+      splitNumber: 4,
+      axisName: { color: 'rgba(42,92,65,.78)', fontSize: 10 },
+      splitArea: { areaStyle: { color: ['rgba(255,255,255,.025)', 'rgba(222,250,222,.055)', 'rgba(166,240,195,.075)', 'rgba(255,255,255,.018)'] } },
+      splitLine: { lineStyle: { color: ['rgba(7,148,85,.11)', 'rgba(7,148,85,.16)'], width: 1 } },
+      axisLine: { lineStyle: { color: 'rgba(7,148,85,.17)' } },
+      indicator: dims.map(item => ({ name: item.name, max: 1 })),
+    },
+    series: [{
+      type: 'radar',
+      symbol: 'circle',
+      symbolSize: 5,
+      lineStyle: { color: 'rgba(7,148,85,.88)', width: 2, shadowBlur: 8, shadowColor: 'rgba(34,181,107,.2)' },
+      itemStyle: { color: '#1ab66b', borderColor: 'rgba(255,255,255,.9)', borderWidth: 1, shadowBlur: 8, shadowColor: 'rgba(34,181,107,.26)' },
+      areaStyle: { color: new echarts.graphic.RadialGradient(.5, .48, .7, [{ offset: 0, color: 'rgba(91,224,148,.36)' }, { offset: .58, color: 'rgba(39,200,115,.24)' }, { offset: 1, color: 'rgba(222,250,222,.055)' }]) },
+      data: [{ value: dims.map(item => item.value), name: '能力得分' }],
+    }],
+  })
+}
 async function submitCalibration() { if (!assessment.value || demoMode.value) return; const labels = requirementItems.value.map(item => ({ requirement_id: item.requirement_id, gold_score: goldScores.value[item.requirement_id], source_type: 'expert', trusted: true })).filter(item => typeof item.gold_score === 'number' && Number.isFinite(item.gold_score)); if (!labels.length) { ElMessage.warning('至少录入一项真实结果分数'); return }; calibrationSubmitting.value = true; try { await calibrateAssessment(assessment.value.id, { gold_labels: labels, apply_corrections: applyCorrections.value }); ElMessage.success('真实结果校准完成'); await loadAssessment(); showCalibration.value = false } catch (error: any) { ElMessage.error(error?.response?.data?.detail || '校准失败') } finally { calibrationSubmitting.value = false } }
 function handleResize() { chart?.resize() }
 watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); chart = null; loadAssessment() }, { immediate: true }); window.addEventListener('resize', handleResize); onBeforeUnmount(() => { stopPolling(); chart?.dispose(); window.removeEventListener('resize', handleResize) })
@@ -371,4 +401,180 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); char
 .quality-strip button svg { width: 13px; }
 @media (max-width: 1260px) { .core-grid { grid-template-columns: minmax(220px, .72fr) minmax(520px, 1.3fr); } .dimension-card { grid-column: 1/3; min-height: auto; } .dimension-list { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; } .analysis-grid { grid-template-columns: 1fr 1fr; } .roadmap-card { grid-column: 1/3; } .empty-visual-grid { grid-template-columns: .7fr 1.4fr; } .empty-dimension-preview { grid-column: 1/3; min-height: auto; display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; } .empty-dimension-preview > .empty-label { grid-column: 1/6; } .empty-dimension-preview > div { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .diagnosis-heading { display: block; } .heading-actions { margin-top: 15px; } .diagnosis-error { display: block; } .diagnosis-error button { margin: 14px 0 0; } .empty-diagnostic { padding: 14px; } .empty-visual-grid { grid-template-columns: 1fr; } .empty-match-preview { display: none; } .empty-core-stage { min-height: 400px; } .empty-dimension-preview { grid-column: auto; display: block; } .empty-process { grid-template-columns: 1fr 1fr; gap: 15px 0; } .empty-process > div:nth-child(2) { border-right: 0; } .core-grid { grid-template-columns: 1fr; } .diagnostic-core { order: -1; min-height: 510px; } .dimension-card { grid-column: auto; } .core-glass { width: 94%; } .core-body { grid-template-columns: 1fr; height: auto; } .core-topline { display: none; } .score-dial { margin: 13px auto 0; } .radar-chart { height: 220px; } .core-meta { flex-wrap: wrap; } .dimension-list { grid-template-columns: 1fr; } .analysis-grid { grid-template-columns: 1fr; } .roadmap-card { grid-column: auto; } .evidence-insights { grid-template-columns: 1fr; } .evidence-insights > section { padding: 0; } .evidence-insights > section + section { margin-top: 20px; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); } .quality-strip { grid-template-columns: 1fr 1fr; } .quality-strip > div { border: 0; } .calibration-panel { grid-template-columns: 1fr; } .calibration-fields { grid-template-columns: 1fr 1fr; } .calibration-actions { grid-column: auto; display: block; } .calibration-actions button { margin-top: 12px; } .match-card { min-height: 290px; } }
+/* Liquid Glass material pass: the diagnostic console is a floating transparent device, not a white dashboard card. */
+.diagnostic-core {
+  --spot-opacity: .34;
+  min-height: 438px;
+  border: 1px solid rgba(255,255,255,.48);
+  background:
+    radial-gradient(ellipse at 50% 68%, rgba(135,235,176,.12), transparent 51%),
+    linear-gradient(145deg, rgba(255,255,255,.13), rgba(222,250,222,.035) 54%, rgba(122,229,166,.075));
+  box-shadow:
+    0 34px 88px rgba(18,92,52,.085),
+    inset 0 1px 1px rgba(255,255,255,.72),
+    inset 0 -1px 1px rgba(42,174,98,.035);
+  backdrop-filter: blur(17px) saturate(148%);
+  -webkit-backdrop-filter: blur(17px) saturate(148%);
+}
+.diagnostic-core::before {
+  inset: auto 10% 1.5%;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(179,243,203,.28) 0%, rgba(222,250,222,.14) 43%, transparent 74%);
+  filter: blur(22px);
+  opacity: .46;
+}
+.diagnostic-core::after {
+  background:
+    radial-gradient(min(270px, 31vw) circle at var(--spot-x) var(--spot-y), rgba(255,255,255,var(--spot-opacity)), transparent 70%),
+    linear-gradient(118deg, rgba(255,255,255,.11), transparent 28%, rgba(117,230,161,.035) 67%, rgba(255,255,255,.09));
+  transition: background .22s ease;
+}
+.diagnostic-platform {
+  inset: -1% -3% -9%;
+  width: 106%;
+  height: 110%;
+  object-position: center 59%;
+  opacity: .68;
+  mask-image: radial-gradient(ellipse at 50% 60%, #000 57%, rgba(0,0,0,.82) 73%, transparent 94%);
+  filter: saturate(1.02) contrast(1.015) brightness(1.025);
+}
+.core-glass {
+  position: relative;
+  z-index: 4;
+  isolation: isolate;
+  width: min(748px, calc(100% - 56px));
+  min-height: 336px;
+  margin-top: -13px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  outline: 1px solid rgba(116,226,160,.085);
+  outline-offset: -4px;
+  border-radius: 29px;
+  background:
+    linear-gradient(138deg, rgba(255,255,255,.33) 0%, rgba(250,255,252,.13) 35%, rgba(231,250,237,.06) 64%, rgba(190,240,208,.055) 100%) padding-box,
+    linear-gradient(132deg, rgba(255,255,255,.94), rgba(255,255,255,.25) 31%, rgba(151,232,183,.34) 72%, rgba(255,255,255,.73)) border-box;
+  box-shadow:
+    0 41px 94px rgba(12,92,48,.145),
+    0 15px 34px rgba(58,178,106,.052),
+    0 -9px 30px rgba(255,255,255,.28),
+    inset 0 2px 1px rgba(255,255,255,.86),
+    inset 1px 0 1px rgba(255,255,255,.42),
+    inset -1px -3px 3px rgba(40,179,97,.07);
+  backdrop-filter: blur(20px) saturate(166%) brightness(1.025);
+  -webkit-backdrop-filter: blur(20px) saturate(166%) brightness(1.025);
+  transform: translateY(-8px) perspective(900px) rotateX(.55deg);
+  transform-origin: center bottom;
+  transition: transform .32s cubic-bezier(.2,.8,.2,1), box-shadow .32s ease;
+}
+.core-glass:hover {
+  transform: translateY(-10px) perspective(900px) rotateX(.25deg);
+  box-shadow:
+    0 45px 102px rgba(12,92,48,.155),
+    0 18px 40px rgba(58,178,106,.08),
+    0 -9px 30px rgba(255,255,255,.3),
+    inset 0 2px 1px rgba(255,255,255,.9),
+    inset -1px -2px 2px rgba(40,179,97,.085);
+}
+.core-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(220px circle at var(--spot-x) var(--spot-y), rgba(255,255,255,.31), transparent 72%),
+    linear-gradient(111deg, rgba(255,255,255,.56) 0%, rgba(255,255,255,.13) 18%, transparent 35%),
+    radial-gradient(ellipse at 72% 112%, rgba(188,241,208,.07), transparent 58%);
+  mix-blend-mode: screen;
+  opacity: .78;
+}
+.core-glass::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: 3;
+  border-radius: 28px;
+  pointer-events: none;
+  box-shadow:
+    inset 0 2px 1px rgba(255,255,255,.8),
+    inset 10px 0 25px rgba(255,255,255,.055),
+    inset -1px -3px 2px rgba(49,185,105,.075);
+  border-top: 1px solid rgba(255,255,255,.62);
+  border-right: 1px solid rgba(116,226,160,.055);
+}
+.core-glass > * { position: relative; z-index: 2; }
+.core-topline { color: rgba(15,49,31,.9); }
+.core-body { height: 250px; }
+.score-dial {
+  background: conic-gradient(from 210deg, rgba(7,148,85,.88) 0deg, rgba(91,220,148,.79) var(--score), rgba(222,250,230,.35) var(--score));
+  box-shadow:
+    0 0 0 8px rgba(255,255,255,.19),
+    0 0 0 9px rgba(12,159,78,.085),
+    0 16px 34px rgba(13,124,69,.13),
+    inset 0 1px 1px rgba(255,255,255,.7);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+.score-dial::before {
+  inset: 6px;
+  border-top-color: rgba(255,255,255,.92);
+  border-right: 1px solid rgba(255,255,255,.22);
+  filter: drop-shadow(0 3px 7px rgba(255,255,255,.3));
+}
+.score-dial > div {
+  width: 124px;
+  height: 124px;
+  border: 1px solid rgba(255,255,255,.52);
+  background: radial-gradient(circle at 37% 26%, rgba(255,255,255,.78), rgba(248,255,250,.56) 54%, rgba(220,249,229,.31));
+  box-shadow: inset 0 2px 2px rgba(255,255,255,.7), inset 0 -1px 2px rgba(28,164,85,.06);
+  backdrop-filter: blur(15px) saturate(148%);
+  -webkit-backdrop-filter: blur(15px) saturate(148%);
+}
+.radar-chart {
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.075), rgba(178,241,202,.045) 49%, transparent 72%);
+  filter: drop-shadow(0 13px 24px rgba(23,139,74,.07));
+}
+.core-meta {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 5px 11px;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 999px;
+  background: rgba(255,255,255,.11);
+  backdrop-filter: blur(10px);
+}
+.match-card,
+.dimension-card {
+  border-color: rgba(255,255,255,.62);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.46), rgba(245,255,249,.24) 56%, rgba(189,244,207,.11)),
+    rgba(250,255,252,.22);
+  box-shadow:
+    0 28px 70px rgba(21,88,54,.075),
+    inset 0 1px 1px rgba(255,255,255,.88),
+    inset 0 -1px 1px rgba(36,164,91,.035);
+  backdrop-filter: blur(29px) saturate(160%);
+  -webkit-backdrop-filter: blur(29px) saturate(160%);
+}
+.evidence-insights,
+.agent-summary,
+.roadmap-card {
+  border: 1px solid rgba(255,255,255,.61);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.49), rgba(247,255,250,.27) 61%, rgba(189,244,207,.085)),
+    rgba(250,255,252,.22);
+  box-shadow: 0 24px 59px rgba(22,82,51,.07), inset 0 1px 1px rgba(255,255,255,.87);
+  backdrop-filter: blur(26px) saturate(154%);
+  -webkit-backdrop-filter: blur(26px) saturate(154%);
+}
+
+@media (max-width: 720px) {
+  .diagnostic-core { min-height: 520px; }
+  .core-glass { width: 94%; margin-top: -2px; transform: none; }
+  .core-glass:hover { transform: translateY(-2px); }
+  .diagnostic-platform { inset: 0 -11% -4%; width: 122%; height: 104%; }
+}
 </style>
