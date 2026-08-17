@@ -20,6 +20,10 @@ backend/qdrant_storage/.lock
 .env
 .env.local
 
+# 本地运行产物
+backend/*.log
+backend/uploads/
+
 # IDE
 .vscode/
 .idea/

@@ -2,6 +2,7 @@ import request from './request'
 
 export interface ResourceInfo {
   id: string
+  assessment_id: string | null
   knowledge_point: string
   content_type: string
   title: string
@@ -13,6 +14,11 @@ export interface ResourceInfo {
   review_reason: string | null
   display_status: string
   generation_method: string | null
+  created_at: string
+}
+
+export interface ResourceBookmarkInfo {
+  resource_id: string
   created_at: string
 }
 
@@ -28,4 +34,16 @@ export function getResourceList(params?: {
 /** 获取资源详情 */
 export function getResource(id: string): Promise<ResourceInfo> {
   return request.get(`/resource/${id}`) as any
+}
+
+export function getResourceBookmarks(): Promise<ResourceBookmarkInfo[]> {
+  return request.get('/resource/bookmarks') as any
+}
+
+export function bookmarkResource(id: string): Promise<ResourceBookmarkInfo> {
+  return request.post(`/resource/${id}/bookmark`) as any
+}
+
+export function unbookmarkResource(id: string): Promise<{ message: string }> {
+  return request.delete(`/resource/${id}/bookmark`) as any
 }

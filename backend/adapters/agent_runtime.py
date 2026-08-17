@@ -9,7 +9,7 @@ Agent pipeline (serial):
   → guardrail (anti-hallucination check)
 
 Public contracts:
-  * diagnose(user_id, target_job, user_input)
+  * diagnose(user_id, target_job, user_input, gold_labels=None)
   * generate_resource(knowledge_point, user_level, resource_type)
   * plan_learning_path(user_id, target_job, current_ability)
 """
@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from .guardrail import check_hallucination, detect_unrequested_resource_type
 from .llm_client import chat, chat_json
+from .calibration import GroundTruthCalibrationAgent, build_requirement_scores
 
 def _check_llm() -> bool:
     try:
@@ -337,12 +338,12 @@ class CapabilityScoringAgent:
 2. high 权重维度对 overall_mastery 影响更大（系数 high=1.6, mid=1.0, low=0.5）
 3. knowledge_gaps 取掌握度低（<0.6）的主题，参照知识库目录选择，从低到高排列，最多 15 个
 4. **必须覆盖所有得分<0.6 的维度，每个低分维度至少对应 1 个薄弱主题**
-5. confidence 基于输入充分度、RAG 覆盖面、技能匹配度综合估算
+5. confidence 只作为输入证据充分度的辅助信号，不等同于准确率
 6. 必须包含全部 16 个维度
 7. 学习者未提及但岗位需要的维度，给 0.50 的中性先验分（不判为不会）
 8. supplement_suggestions：若你认为知识库目录缺少某重要主题，可在此列出最多 3 个补充建议
 
-请输出严格 JSON：{{"overall_mastery": 0.0, "ability_vector": [...], "knowledge_gaps": [...], "supplement_suggestions": [...], "confidence": 0.0}}"""
+请输出严格 JSON：{{"overall_mastery": 0.0, "ability_vector": [...], "requirement_scores": [{{"requirement_id": "岗位代码.能力代码", "requirement_name": "能力名称", "score": 0.0, "status": "qualified|partial|gap", "evidence_ids": []}}], "knowledge_gaps": [...], "supplement_suggestions": [...], "confidence": 0.0}}"""
 
         user_msg = json.dumps({
             "matched_skills": profile.matched_skills,
@@ -387,6 +388,12 @@ class CapabilityScoringAgent:
                 if s_str and s_str not in profile.knowledge_catalog:
                     profile.knowledge_catalog.append(s_str)
 
+        requirement_scores = build_requirement_scores(
+            target_job,
+            role["skills"],
+            profile,
+            result.get("requirement_scores"),
+        )
         confidence = round(min(0.99, max(0.30, float(result.get("confidence", 0.7)))), 2)
         events.append(AgentEvent(
             name=self.name, status="completed",
@@ -397,6 +404,7 @@ class CapabilityScoringAgent:
         return {
             "overall_mastery": round(float(result.get("overall_mastery", 0.3)), 4),
             "ability_vector": normalized_vector,
+            "requirement_scores": requirement_scores,
             "knowledge_gaps": knowledge_gaps,
             "confidence": confidence,
         }
@@ -435,7 +443,13 @@ class CapabilityScoringAgent:
             output_summary=f"生成 16 维能力向量，识别 {len(gap_names)} 个薄弱知识点。",
             confidence=round(confidence, 2),
         ))
-        return {"overall_mastery": overall, "ability_vector": vector, "knowledge_gaps": gap_names, "confidence": round(confidence, 2)}
+        return {
+            "overall_mastery": overall,
+            "ability_vector": vector,
+            "requirement_scores": build_requirement_scores(target_job, role["skills"], profile),
+            "knowledge_gaps": gap_names,
+            "confidence": round(confidence, 2),
+        }
 
 
 class CalibrationAgent:
@@ -726,7 +740,14 @@ class AgentRuntime:
             raise ValueError(f"不支持的目标职业：{target_job}")
         return role
 
-    def diagnose(self, user_id: str, target_job: str, user_input: str) -> dict[str, Any]:
+    def diagnose(
+        self,
+        user_id: str,
+        target_job: str,
+        user_input: str,
+        gold_labels: list[dict[str, Any]] | None = None,
+        apply_corrections: bool = False,
+    ) -> dict[str, Any]:
         role = self._role(target_job)
         self._current_job.set(role)
         trace_id = f"trace_{uuid4().hex[:12]}"
@@ -746,6 +767,39 @@ class AgentRuntime:
         diagnosis = CapabilityScoringAgent().run(role, profile, events)
         diagnosis = CalibrationAgent().run(diagnosis, profile, events)
 
+        # ── 层2：真实结果校准 ──
+        # 没有标准结果时只返回 unvalidated，不把模型自报置信度冒充准确率。
+        ground_truth = GroundTruthCalibrationAgent().run(
+            target_job=role,
+            diagnosis=diagnosis,
+            role_skills=ROLE_PROFILES[role]["skills"],
+            dimensions=DIMENSIONS,
+            profile=profile,
+            gold_labels=gold_labels or [],
+            apply_corrections=apply_corrections,
+        )
+        diagnosis = ground_truth["diagnosis"]
+        diagnosis["calibration"] = ground_truth["summary"]
+        diagnosis["calibration_records"] = ground_truth["records"]
+        events.append(AgentEvent(
+            name=GroundTruthCalibrationAgent.name,
+            status="completed" if ground_truth["summary"]["status"] != "rejected" else "needs_review",
+            input_summary=(
+                f"接收 {len(gold_labels or [])} 条标准结果，按 requirement_id 对照 AI 能力判断。"
+            ),
+            output_summary=(
+                "没有可信标准结果，标记为未校准。"
+                if not ground_truth["summary"]["evaluated_count"]
+                else (
+                    f"完成 {ground_truth['summary']['evaluated_count']} 项比对，"
+                    f"准确率 {ground_truth['summary']['accuracy']:.0%}，"
+                    f"平均绝对误差 {ground_truth['summary']['mean_absolute_error'] if ground_truth['summary']['mean_absolute_error'] is not None else '—'}。"
+                )
+            ),
+            confidence=1.0 if ground_truth["summary"]["evaluated_count"] else 0.3,
+            review_result=ground_truth["summary"]["status"],
+        ))
+
         # ── 层1：知识缺口校验（防幻觉）——过滤掉岗位能力模型/知识库无依据的缺口 ──
         kept_gaps, gap_validation = _validate_gaps(
             diagnosis.get("knowledge_gaps", []), role, profile.knowledge_catalog
@@ -762,6 +816,51 @@ class AgentRuntime:
 
         self.last_trace = self._trace(trace_id, user_id, role, events, profile, diagnosis, None)
         return diagnosis
+
+    def calibrate_existing(
+        self,
+        user_id: str,
+        target_job: str,
+        diagnosis: dict[str, Any],
+        user_input: str,
+        gold_labels: list[dict[str, Any]],
+        apply_corrections: bool = False,
+    ) -> dict[str, Any]:
+        """Calibrate a stored diagnosis without regenerating resources.
+
+        This endpoint is used by the test team after expert review or a
+        practical task has produced the real result. It keeps the original AI
+        output and stores the comparison separately.
+        """
+        role = self._role(target_job)
+        profile = InputParsingAgent()._run_rules(role, user_input)
+        events: list[AgentEvent] = []
+        result = GroundTruthCalibrationAgent().run(
+            target_job=role,
+            diagnosis=diagnosis,
+            role_skills=ROLE_PROFILES[role]["skills"],
+            dimensions=DIMENSIONS,
+            profile=profile,
+            gold_labels=gold_labels,
+            apply_corrections=apply_corrections,
+        )
+        events.append(AgentEvent(
+            name=GroundTruthCalibrationAgent.name,
+            status="completed" if result["summary"]["status"] != "rejected" else "needs_review",
+            input_summary=f"对已有诊断重新比对 {len(gold_labels)} 条可信标准结果。",
+            output_summary=f"完成 {result['summary']['evaluated_count']} 项记录。",
+            confidence=1.0 if result["summary"]["evaluated_count"] else 0.3,
+            review_result=result["summary"]["status"],
+        ))
+        self.last_trace = {
+            "trace_id": f"trace_{uuid4().hex[:12]}",
+            "user_id": user_id,
+            "target_job": role,
+            "agents": [event.__dict__ for event in events],
+            "calibration": result["summary"],
+            "review": {"approved": result["summary"]["status"] == "passed", "errors": []},
+        }
+        return result
 
     def generate_resource(self, knowledge_point: str, user_level: float, resource_type: str) -> dict[str, Any]:
         role = self._current_job.get()
@@ -837,6 +936,8 @@ class AgentRuntime:
             "negative_skills": sorted(profile.negative_skills),
             "retrieval_sources": profile.retrieval_hits if hits is None else hits,
             "diagnosis": diagnosis,
+            "calibration_status": (diagnosis.get("calibration") or {}).get("status", "unvalidated"),
+            "calibration_accuracy": (diagnosis.get("calibration") or {}).get("accuracy"),
             "review": {"approved": True, "errors": []},
         }
 

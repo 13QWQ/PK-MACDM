@@ -8,7 +8,10 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from database import engine, Base, SessionLocal
-from routers import auth, assessment, session, resource, path, jobs, record
+from routers import auth, assessment, session, resource, path, jobs, record, material
+from models.calibration import CalibrationRecord  # noqa: F401 - ensure table metadata is loaded
+from models.material import UserMaterial  # noqa: F401 - ensure table metadata is loaded
+from models.resource_bookmark import ResourceBookmark  # noqa: F401 - ensure table metadata is loaded
 
 # 自动创建数据库表
 Base.metadata.create_all(bind=engine)
@@ -25,7 +28,14 @@ def _ensure_columns(table: str, columns: dict[str, str]) -> None:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}"))
 
 
-_ensure_columns("assessments", {"gap_validation": "TEXT"})
+_ensure_columns("assessments", {
+    "gap_validation": "TEXT",
+    "requirement_scores": "TEXT",
+    "calibration_status": "VARCHAR(30)",
+    "calibration_summary": "TEXT",
+    "material_ids": "TEXT",
+    "agent_trace": "TEXT",
+})
 _ensure_columns("resources", {
     "source_chunk_id": "VARCHAR(100)",
     "source_text": "TEXT",
@@ -116,6 +126,7 @@ app.include_router(resource.router, prefix="/api/resource", tags=["学习资源"
 app.include_router(path.router, prefix="/api/path", tags=["学习路径"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["职业列表"])
 app.include_router(record.router, prefix="/api/record", tags=["学习记录"])
+app.include_router(material.router, prefix="/api/material", tags=["学习资料"])
 
 
 @app.get("/")

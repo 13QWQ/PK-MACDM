@@ -4,19 +4,23 @@
 
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models.assessment import Assessment
+from models.calibration import CalibrationRecord
 from models.path import LearningPath
 from models.resource import Resource
 from models.job import Job
 from models.user import User
+from models.material import UserMaterial
+from models.learning_record import LearningRecord
+from models.resource_bookmark import ResourceBookmark
 from routers.auth import get_current_user
 from adapters import agent_adapter
 
@@ -24,12 +28,74 @@ router = APIRouter()
 
 
 # ===== 诊断进度（进程内，供前端轮询）=====
-_PROGRESS: dict[str, dict] = {}   # assessment_id -> {"label": str, "percent": int}
+_PROGRESS: dict[str, dict] = {}
 
 
-def _set_progress(assessment_id: str, label: str, percent: int) -> None:
-    """记录某次诊断的当前阶段进度"""
-    _PROGRESS[assessment_id] = {"label": label, "percent": int(percent)}
+def _progress_stage(percent: int) -> tuple[str, str]:
+    """Map a numeric progress value to the Agent currently responsible for the work."""
+    if percent >= 100:
+        return "complete", "协同调度器"
+    if percent >= 92:
+        return "review", "审核纠偏 Agent"
+    if percent >= 55:
+        return "resource", "资源生成 Agent"
+    if percent >= 50:
+        return "path", "路径规划 Agent"
+    if percent >= 10:
+        return "diagnosis", "能力诊断 Agent"
+    return "material", "资料解析 Agent"
+
+
+def _set_progress(
+    assessment_id: str,
+    label: str,
+    percent: int,
+    *,
+    status: str = "running",
+) -> None:
+    """Record current progress and retain a bounded event history for the live Agent panel."""
+    safe_percent = max(0, min(100, int(percent)))
+    stage, agent = _progress_stage(safe_percent)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    previous = _PROGRESS.get(assessment_id, {})
+    events = list(previous.get("events", []))
+    event = {
+        "stage": stage,
+        "agent": agent,
+        "label": label,
+        "percent": safe_percent,
+        "status": status,
+        "updated_at": now,
+    }
+    if not events or any(event[key] != events[-1].get(key) for key in ("stage", "label", "percent", "status")):
+        events.append(event)
+    _PROGRESS[assessment_id] = {**event, "events": events[-50:]}
+
+
+def _persist_calibration_records(db: Session, assessment_id: str, calibration: dict, records: list[dict]) -> None:
+    """Replace the requirement-level records for one assessment."""
+    db.query(CalibrationRecord).filter(
+        CalibrationRecord.assessment_id == assessment_id
+    ).delete(synchronize_session=False)
+    for item in records or []:
+        db.add(CalibrationRecord(
+            assessment_id=assessment_id,
+            requirement_id=str(item.get("requirement_id") or "unknown"),
+            requirement_name=str(item.get("requirement_name") or "未命名能力"),
+            predicted_score=item.get("predicted_score"),
+            gold_score=item.get("gold_score"),
+            absolute_error=item.get("absolute_error"),
+            predicted_status=item.get("predicted_status"),
+            gold_status=item.get("gold_status"),
+            status=str(item.get("status") or "needs_review"),
+            is_correct=1 if item.get("is_correct") else 0,
+            trusted=1 if item.get("trusted", True) else 0,
+            source_type=str(item.get("source_type") or "expert"),
+            reference_answer=str(item.get("reference_answer") or ""),
+            evidence_ids=item.get("evidence_ids") or [],
+            details=item,
+            calibration_version=str(calibration.get("version") or "ground-truth-calibration-v1"),
+        ))
 
 
 # ===== 请求/响应模型 =====
@@ -40,6 +106,17 @@ class CreateAssessmentRequest(BaseModel):
 
 class SubmitAssessmentRequest(BaseModel):
     user_input: str  # 用户自由文本输入
+    # 仅供测试/评审阶段提交。普通学习者不需要填写。
+    gold_labels: list[dict] = Field(default_factory=list)
+    apply_corrections: bool = False
+    material_ids: list[str] = Field(default_factory=list)
+
+
+class CalibrationSubmissionRequest(BaseModel):
+    """专家/客观测评回填的真实结果。"""
+
+    gold_labels: list[dict] = Field(default_factory=list)
+    apply_corrections: bool = False
 
 
 class ReviewInputRequest(BaseModel):
@@ -73,6 +150,9 @@ class AssessmentResponse(BaseModel):
     knowledge_gaps: list | None = None
     gap_validation: list | None = None
     confidence: float | None = None
+    requirement_scores: list | None = None
+    calibration_status: str | None = None
+    calibration_summary: dict | None = None
     created_at: datetime
 
 
@@ -82,6 +162,9 @@ class DiagnosisResponse(BaseModel):
     ability_matrix: list
     knowledge_gaps: list
     confidence: float
+    requirement_scores: list = Field(default_factory=list)
+    calibration_status: str = "unvalidated"
+    calibration_summary: dict = Field(default_factory=dict)
 
 
 class AssessmentListItem(BaseModel):
@@ -159,8 +242,29 @@ def submit_assessment(
     if not assessment:
         raise HTTPException(status_code=404, detail="评估不存在")
 
-    # 保存用户输入
+    # 只纳入当前用户、已解析的资料；图片等 needs_ocr 状态不得被伪装为文本证据。
+    materials = []
+    if request.material_ids:
+        materials = db.query(UserMaterial).filter(
+            UserMaterial.id.in_(request.material_ids),
+            UserMaterial.user_id == current_user.id,
+        ).all()
+        if len(materials) != len(set(request.material_ids)):
+            raise HTTPException(status_code=400, detail="存在无权限或不存在的资料")
+    usable_materials = [item for item in materials if item.status == "parsed" and (item.extracted_text or "").strip()]
+    material_context = "\n\n".join(
+        f"【已提交资料：{item.original_name}】\n{(item.extracted_text or '')[:6000]}"
+        for item in usable_materials
+    )
+    agent_input = request.user_input.strip()
+    if material_context:
+        agent_input = f"{agent_input}\n\n{material_context}".strip()
+
+    # 保存用户原始输入；资料文本只在本次 Agent 上下文中使用，不回显到前端公开区域。
     assessment.user_input = request.user_input
+    assessment.material_ids = [item.id for item in materials]
+    for item in materials:
+        item.assessment_id = assessment.id
     db.commit()
 
     try:
@@ -175,9 +279,12 @@ def submit_assessment(
         diagnosis = agent_adapter.diagnose(
             user_id=current_user.id,
             target_job=target_job,
-            user_input=request.user_input,
+            user_input=agent_input,
+            gold_labels=request.gold_labels,
+            apply_corrections=request.apply_corrections,
         )
-        _set_progress(assessment.id, "能力诊断完成", 45)
+        assessment.agent_trace = agent_adapter.get_last_trace()
+        _set_progress(assessment.id, "能力诊断与真实结果校准完成", 45)
 
         print(f"[DEBUG] knowledge_gaps: {diagnosis.get('knowledge_gaps')}", flush=True)
         print(f"[DEBUG] overall_mastery: {diagnosis.get('overall_mastery')}", flush=True)
@@ -190,6 +297,23 @@ def submit_assessment(
         assessment.knowledge_gaps = diagnosis["knowledge_gaps"]
         assessment.gap_validation = diagnosis.get("gap_validation", [])
         assessment.confidence = diagnosis["confidence"]
+        assessment.requirement_scores = diagnosis.get("requirement_scores", [])
+        calibration = diagnosis.get("calibration") or {
+            "status": "unvalidated",
+            "evaluated_count": 0,
+            "accuracy": None,
+            "mean_absolute_error": None,
+        }
+        assessment.calibration_status = calibration.get("status", "unvalidated")
+        assessment.calibration_summary = calibration
+
+        # 保存逐能力项校准记录，供测试文档、Agent 看板和后续误差分析使用。
+        _persist_calibration_records(
+            db,
+            assessment.id,
+            calibration,
+            diagnosis.get("calibration_records", []),
+        )
 
         # ③ 先生成学习路径（资源将按路径知识点生成，保证两边对齐）
         raw_vector = [item["value"] for item in diagnosis["ability_vector"]]
@@ -346,17 +470,124 @@ def submit_assessment(
         # ⑦ 持久化
         db.commit()
         db.refresh(assessment)
-        _set_progress(assessment.id, "完成", 100)
+        _set_progress(assessment.id, "诊断、资源生成与审核全部完成", 100, status="completed")
 
         return assessment
 
     except HTTPException:
+        _set_progress(assessment.id, "任务执行失败", _PROGRESS.get(assessment.id, {}).get("percent", 0), status="failed")
         raise
     except Exception as e:
         traceback.print_exc()
         db.rollback()
-        _PROGRESS.pop(assessment_id, None)
+        _set_progress(
+            assessment.id,
+            "任务执行失败，请稍后重试",
+            _PROGRESS.get(assessment.id, {}).get("percent", 0),
+            status="failed",
+        )
         raise HTTPException(status_code=500, detail=f"诊断失败: {e}")
+
+
+@router.post("/{assessment_id}/calibrate")
+def calibrate_assessment(
+    assessment_id: str,
+    request: CalibrationSubmissionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """回填客观题、实操结果或专家标注，重新校准已有诊断。"""
+    assessment = db.query(Assessment).filter(
+        Assessment.id == assessment_id,
+        Assessment.user_id == current_user.id,
+    ).first()
+    if not assessment:
+        raise HTTPException(status_code=404, detail="评估不存在")
+    if assessment.overall_mastery is None:
+        raise HTTPException(status_code=400, detail="评估尚未完成，不能校准")
+
+    job = db.query(Job).filter(Job.id == assessment.job_id).first()
+    target_job = job.job_title if job else ""
+    diagnosis = {
+        "overall_mastery": float(assessment.overall_mastery),
+        "ability_vector": assessment.ability_vector or [],
+        "knowledge_gaps": assessment.knowledge_gaps or [],
+        "requirement_scores": assessment.requirement_scores or [],
+        "confidence": float(assessment.confidence or 0.3),
+    }
+    result = agent_adapter.calibrate_existing(
+        user_id=current_user.id,
+        target_job=target_job,
+        diagnosis=diagnosis,
+        user_input=assessment.user_input or "",
+        gold_labels=request.gold_labels,
+        apply_corrections=request.apply_corrections,
+    )
+    calibrated = result["diagnosis"]
+    summary = result["summary"]
+    assessment.calibration_status = summary.get("status", "unvalidated")
+    assessment.calibration_summary = summary
+    assessment.requirement_scores = calibrated.get("requirement_scores", diagnosis["requirement_scores"])
+    if summary.get("correction_applied"):
+        assessment.overall_mastery = calibrated.get("overall_mastery", assessment.overall_mastery)
+        assessment.ability_vector = calibrated.get("ability_vector", assessment.ability_vector)
+        assessment.knowledge_gaps = calibrated.get("knowledge_gaps", assessment.knowledge_gaps)
+    _persist_calibration_records(db, assessment.id, summary, result.get("records", []))
+    db.commit()
+    db.refresh(assessment)
+    return {
+        "assessment_id": assessment.id,
+        "calibration": summary,
+        "records": result.get("records", []),
+        "diagnosis_updated": bool(summary.get("correction_applied")),
+    }
+
+
+@router.get("/{assessment_id}/calibration")
+def get_calibration(
+    assessment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """查询一次评估的校准汇总和逐能力项误差。"""
+    assessment = db.query(Assessment).filter(
+        Assessment.id == assessment_id,
+        Assessment.user_id == current_user.id,
+    ).first()
+    if not assessment:
+        raise HTTPException(status_code=404, detail="评估不存在")
+    records = db.query(CalibrationRecord).filter(
+        CalibrationRecord.assessment_id == assessment.id
+    ).order_by(CalibrationRecord.created_at.asc()).all()
+    return {
+        "assessment_id": assessment.id,
+        "status": assessment.calibration_status or "unvalidated",
+        "summary": assessment.calibration_summary or {
+            "status": "unvalidated",
+            "evaluated_count": 0,
+            "accuracy": None,
+            "mean_absolute_error": None,
+        },
+        "records": [
+            {
+                "id": record.id,
+                "requirement_id": record.requirement_id,
+                "requirement_name": record.requirement_name,
+                "predicted_score": float(record.predicted_score) if record.predicted_score is not None else None,
+                "gold_score": float(record.gold_score) if record.gold_score is not None else None,
+                "absolute_error": float(record.absolute_error) if record.absolute_error is not None else None,
+                "predicted_status": record.predicted_status,
+                "gold_status": record.gold_status,
+                "status": record.status,
+                "is_correct": bool(record.is_correct),
+                "trusted": bool(record.trusted),
+                "source_type": record.source_type,
+                "evidence_ids": record.evidence_ids or [],
+                "created_at": record.created_at,
+            }
+            for record in records
+        ],
+    }
 
 
 @router.get("/{assessment_id}", response_model=AssessmentResponse)
@@ -392,7 +623,43 @@ def get_progress(
     if not assessment:
         raise HTTPException(status_code=404, detail="评估不存在")
 
-    return _PROGRESS.get(assessment_id, {"label": "正在解析学习情况", "percent": 0})
+    return _PROGRESS.get(assessment_id, {
+        "stage": "material",
+        "agent": "资料解析 Agent",
+        "label": "等待任务启动",
+        "percent": 0,
+        "status": "waiting",
+        "updated_at": None,
+        "events": [],
+    })
+
+
+@router.get("/{assessment_id}/agents")
+def get_agent_trace(
+    assessment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the persisted trace for the review workspace, plus live progress while running."""
+    assessment = db.query(Assessment).filter(
+        Assessment.id == assessment_id,
+        Assessment.user_id == current_user.id,
+    ).first()
+    if not assessment:
+        raise HTTPException(status_code=404, detail="评估不存在")
+    return {
+        "assessment_id": assessment.id,
+        "progress": _PROGRESS.get(assessment_id, {
+            "stage": "material",
+            "agent": "资料解析 Agent",
+            "label": "等待开始",
+            "percent": 0,
+            "status": "waiting",
+            "updated_at": None,
+            "events": [],
+        }),
+        "trace": assessment.agent_trace or {"agents": []},
+    }
 
 
 @router.get("/{assessment_id}/diagnosis", response_model=DiagnosisResponse)
@@ -419,6 +686,14 @@ def get_diagnosis(
         "ability_matrix": assessment.ability_matrix or [],
         "knowledge_gaps": assessment.knowledge_gaps,
         "confidence": float(assessment.confidence),
+        "requirement_scores": assessment.requirement_scores or [],
+        "calibration_status": assessment.calibration_status or "unvalidated",
+        "calibration_summary": assessment.calibration_summary or {
+            "status": "unvalidated",
+            "evaluated_count": 0,
+            "accuracy": None,
+            "mean_absolute_error": None,
+        },
     }
 
 
@@ -437,7 +712,31 @@ def delete_assessment(
     if not assessment:
         raise HTTPException(status_code=404, detail="评估不存在")
 
+    resource_ids = [row[0] for row in db.query(Resource.id).filter(
+        Resource.assessment_id == assessment.id
+    ).all()]
+    if resource_ids:
+        db.query(ResourceBookmark).filter(
+            ResourceBookmark.resource_id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+        db.query(LearningRecord).filter(
+            LearningRecord.resource_id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+        db.query(Resource).filter(
+            Resource.id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+    db.query(LearningPath).filter(
+        LearningPath.assessment_id == assessment.id
+    ).delete(synchronize_session=False)
+    db.query(CalibrationRecord).filter(
+        CalibrationRecord.assessment_id == assessment.id
+    ).delete(synchronize_session=False)
+    db.query(UserMaterial).filter(
+        UserMaterial.assessment_id == assessment.id,
+        UserMaterial.user_id == current_user.id,
+    ).update({UserMaterial.assessment_id: None}, synchronize_session=False)
     db.delete(assessment)
     db.commit()
+    _PROGRESS.pop(assessment_id, None)
 
     return {"message": "已删除"}

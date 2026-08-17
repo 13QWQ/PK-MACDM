@@ -1,1121 +1,446 @@
 <template>
   <div class="home-page">
-    <!-- Hero区域 -->
-    <section class="hero">
-      <div class="hero-left">
-        <h1 class="hero-title">用 AI 诊断目标能力<br>生成你的下一步学习资源</h1>
-        <p class="hero-subtitle">面向职业学习者的目标能力诊断与个性化培训资源生成系统</p>
-        <p class="hero-desc">提交你的技能、项目经验、学习经历等资料，系统将通过 AI 分析你的能力水平，判断是否满足目标岗位要求，识别未达标或证据不足的能力，并生成个性化的培训资源与学习路径。</p>
-        <div class="hero-buttons">
-          <button class="app-btn app-btn-primary app-btn-large" @click="$router.push('/input')">🚀 立即开始诊断</button>
-          <button class="app-btn app-btn-outline app-btn-large" @click="showExample = true">📄 查看示例报告</button>
-        </div>
-        <div class="tag-group">
-          <span class="tag-label">👤 适合人群：</span>
-          <span class="tag">大学生</span>
-          <span class="tag">应届毕业生</span>
-          <span class="tag">转行者</span>
-          <span class="tag">在职技能提升者</span>
-          <span class="tag">企业培训学员</span>
+    <section class="hero content-width">
+      <div class="hero-copy motion-enter">
+        <span class="glass-pill hero-pill"><span class="live-dot"></span>AI Agent 赋能 · 精准评估 · 智能成长</span>
+        <h1>
+          <span class="headline-line">用 AI 看见能力差距，</span>
+          <span class="headline-line">生成属于你的<span class="gradient-title">成长路径</span></span>
+        </h1>
+        <p>职学导航通过多 Agent 协同评估知识、技能与项目经历，对照岗位能力模型形成证据链，生成可追溯的诊断结果与下一步行动路径。</p>
+        <div class="hero-actions">
+          <button class="hero-primary primary-gradient-button" type="button" @click="startAssessment()">开始测评 <ArrowRight /></button>
+          <button class="hero-secondary" type="button" @click="scrollToRoles"><VideoPlay /> 了解职学导航</button>
         </div>
       </div>
-      <div class="hero-right">
-        <div class="flow-card">
-          <div class="flow-title">AI 驱动的资料审查与能力提升流程</div>
-          <div class="flow-steps">
-            <div class="flow-step">
-              <div class="step-number">1</div>
-              <div class="step-icon">📝</div>
-              <div class="step-name">资料提交</div>
-              <div class="step-desc">描述你的技能、项目经验、学习经历</div>
-            </div>
-            <div class="flow-arrow">→</div>
-            <div class="flow-step">
-              <div class="step-number">2</div>
-              <div class="step-icon">📊</div>
-              <div class="step-name">AI 分析</div>
-              <div class="step-desc">AI 分析能力水平，识别优势与薄弱点</div>
-            </div>
-            <div class="flow-arrow">→</div>
-            <div class="flow-step">
-              <div class="step-number">3</div>
-              <div class="step-icon">🎯</div>
-              <div class="step-name">资源生成</div>
-              <div class="step-desc">生成个性化学习资源与提升路径</div>
-            </div>
-          </div>
-          <div class="flow-tags">
-            <span class="flow-tag">自由文本输入</span>
-            <span class="flow-tag">AI 智能分析</span>
-            <span class="flow-tag">个性化方案</span>
-          </div>
-          <div class="flow-bottom">
-            <span>✦ 基于多 Agent 协同分析，让学习更有方向，让提升更高效</span>
-          </div>
-        </div>
+
+      <div class="spatial-hub motion-enter motion-delay-2" aria-label="AI 多智能体能力分析中枢示意" @pointermove="moveSpotlight" @pointerleave="resetSpotlight">
+        <img class="hub-visual hub-visual-back" src="/assets/spatial-agent-core.png" alt="绿色玻璃质感的 AI Agent 空间分析核心" />
+        <article class="float-card score-card depth-front">
+          <div class="card-kicker"><DataAnalysis /> 能力评分</div>
+          <div class="score-row"><strong>86</strong><span>/100</span></div>
+          <small>超过 82% 同岗位学习者</small>
+        </article>
+        <article class="float-card radar-card depth-back">
+          <div class="card-kicker"><Aim /> 能力雷达图</div>
+          <div ref="heroRadarRef" class="hero-radar" aria-label="工程能力、项目经验、学习潜力、基础能力和软实力示例雷达图"></div>
+        </article>
+        <article class="float-card agent-card depth-middle">
+          <span class="agent-icon"><Service /></span>
+          <div><b>AI Agent</b><p>工程实践表现较好，下一阶段建议加强系统设计能力。</p></div>
+        </article>
+        <article class="float-card path-card depth-front">
+          <div class="card-kicker"><Guide /> 个性化学习路径</div>
+          <div class="path-line"><span>基础补强</span><i><b style="width:60%"></b></i><em>60%</em></div>
+          <div class="path-line"><span>项目进阶</span><i><b style="width:25%"></b></i><em>25%</em></div>
+          <div class="path-line muted"><span>综合实战</span><i></i><em>待开始</em></div>
+        </article>
+        <img class="hub-visual hub-visual-front" src="/assets/spatial-agent-core.png" alt="" aria-hidden="true" />
       </div>
     </section>
 
-    <!-- 功能卡片区域 -->
-    <section class="features">
-      <div class="feature-card">
-        <div class="feature-header">
-          <div class="feature-icon blue">📝</div>
-          <span class="feature-name">资料审查</span>
-          <span class="feature-badge">自由输入</span>
+    <section class="workflow content-width motion-enter motion-delay-1" aria-label="产品使用流程">
+      <template v-for="(step, index) in workflow" :key="step.title">
+        <div class="workflow-step">
+          <span class="workflow-index">0{{ index + 1 }}</span>
+          <span class="workflow-icon"><component :is="step.icon" /></span>
+          <span><b>{{ step.title }}</b><small>{{ step.detail }}</small></span>
         </div>
-        <p class="feature-desc">自由描述你的技能、项目经验、学习经历、课程记录等，AI 将全面分析你的能力水平，无需填写固定表单。</p>
-        <a href="#" class="feature-link" @click.prevent="$router.push('/input')">开始资料审查 →</a>
+        <span v-if="index < workflow.length - 1" class="workflow-arrow"><ArrowRight /></span>
+      </template>
+    </section>
+
+    <section id="roles" class="role-section content-width">
+      <div class="section-heading">
+        <div><span class="eyebrow">目标岗位能力模型</span><h2>从一个岗位做深，到多个方向扩展</h2></div>
+        <p>每个方向都由岗位要求、能力证据标准和领域知识库共同支撑，诊断与推荐结果保留可追溯依据。</p>
       </div>
-      <div class="feature-card">
-        <div class="feature-header">
-          <div class="feature-icon green">📊</div>
-          <span class="feature-name">能力诊断</span>
-          <span class="feature-badge green">AI 智能判定</span>
-        </div>
-        <p class="feature-desc">对照目标岗位能力模型，AI 多维度分析你的能力，判断整体达标度，识别优势能力与薄弱知识点。</p>
-        <a href="#" class="feature-link" @click.prevent="showExample = true">查看诊断示例 →</a>
-      </div>
-      <div class="feature-card">
-        <div class="feature-header">
-          <div class="feature-icon purple">📚</div>
-          <span class="feature-name">资源包</span>
-          <span class="feature-badge purple">个性化推荐</span>
-        </div>
-        <p class="feature-desc">基于诊断结果，为你推荐个性化的学习资源，包括讲义、练习、案例、视频等多种类型。</p>
-        <a href="#" class="feature-link" @click.prevent="showResourceExample = true">查看资源示例 →</a>
+
+      <div v-if="jobsLoading" class="role-grid"><div v-for="i in 4" :key="i" class="role-tile skeleton"></div></div>
+      <div v-else-if="jobsError" class="role-state glass-surface"><b>岗位能力模型暂时无法加载</b><button type="button" @click="loadJobs">重新加载</button></div>
+      <div v-else class="role-grid">
+        <button v-for="(job, index) in jobs" :key="job.id" class="role-tile glass-surface" :class="`role-${index + 1}`" type="button" @click="startAssessment(job.id)">
+          <span class="role-object"><component :is="roleMeta[index % roleMeta.length].icon" /></span>
+          <div class="role-copy"><h3>{{ job.job_title }}</h3><p>{{ roleMeta[index % roleMeta.length].summary }}</p></div>
+          <span class="role-more">了解更多 <ArrowRight /></span>
+        </button>
       </div>
     </section>
 
-    <!-- 学习路径卡片 -->
-    <section class="features" style="padding-top: 0">
-      <div class="feature-card feature-card-full">
-        <div class="feature-header">
-          <div class="feature-icon blue">🗺️</div>
-          <span class="feature-name">个性化学习路径</span>
-          <span class="feature-badge">智能规划</span>
-        </div>
-        <p class="feature-desc" style="max-width: 800px">根据你的能力诊断结果，AI 为你规划专属的学习路径，按步骤提升薄弱能力，每个步骤都配有推荐资源和预计学习时间，让学习更有条理、更高效。</p>
-        <a href="#" class="feature-link" @click.prevent="showPathExample = true">查看路径示例 →</a>
-      </div>
+    <section class="proof-section content-width">
+      <article v-for="item in proofPoints" :key="item.title" class="proof-point">
+        <span class="proof-icon"><component :is="item.icon" /></span>
+        <div><h3>{{ item.title }}</h3><p>{{ item.detail }}</p></div>
+      </article>
     </section>
 
-    <!-- 底部特色 -->
-    <section class="bottom-features">
-      <div class="bottom-feature">
-        <div class="bottom-feature-icon blue">🔍</div>
-        <div>
-          <div class="bottom-feature-name">证据链判定</div>
-          <div class="bottom-feature-desc">以你提供的资料为基础，确保分析客观、可验证</div>
-        </div>
-      </div>
-      <div class="bottom-feature">
-        <div class="bottom-feature-icon cyan">🤝</div>
-        <div>
-          <div class="bottom-feature-name">多 Agent 协同</div>
-          <div class="bottom-feature-desc">多个 AI Agent 协同分析，结论更全面、准确</div>
-        </div>
-      </div>
-      <div class="bottom-feature">
-        <div class="bottom-feature-icon green">📋</div>
-        <div>
-          <div class="bottom-feature-name">资源可追溯</div>
-          <div class="bottom-feature-desc">所有推荐资源均可追溯来源与依据，学习更安心</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 页脚 -->
-    <footer class="footer">
-      职学导航 © 2026 - 面向职业学习者的目标能力诊断与个性化培训资源生成系统
+    <footer class="app-footer home-footer">
+      <span class="footer-brand"><span class="footer-mark"><Connection /></span><b>职学导航</b><em>AI 驱动的学习与成长评估平台</em></span>
+      <span class="footer-links"><router-link to="/input">资料审查</router-link><router-link to="/diagnosis">能力诊断</router-link><router-link to="/library">资料库</router-link></span>
+      <span>© 2026 职学导航</span>
     </footer>
-
-    <!-- 示例报告弹窗 -->
-    <el-dialog
-      v-model="showExample"
-      title="示例诊断报告（仅供参考）"
-      width="920px"
-      top="3vh"
-      :close-on-click-modal="false"
-      @opened="initExampleChart"
-      @closed="disposeExampleChart"
-    >
-      <div class="example-report">
-        <!-- 概览行 -->
-        <div class="ex-overview">
-          <div class="ex-mastery">
-            <div class="ex-label">综合掌握度</div>
-            <div class="mastery-ring" style="--pct:0.72">
-              <span class="mastery-value">72</span>
-              <span class="mastery-unit">分</span>
-            </div>
-            <span class="mastery-tag mid">部分达标</span>
-          </div>
-          <div class="ex-meta">
-            <div class="ex-meta-item"><span>置信度</span><strong>85%</strong></div>
-            <div class="ex-meta-item"><span>能力维度</span><strong>16 项</strong></div>
-            <div class="ex-meta-item"><span>知识缺口</span><strong style="color:#dc2626">2 项</strong></div>
-            <div class="ex-meta-item"><span>诊断时间</span><strong>2026-07-16 17:23</strong></div>
-          </div>
-        </div>
-
-        <!-- 我的输入 -->
-        <div class="ex-input">
-          <h4>📝 我的输入</h4>
-          <div class="ex-input-body">我目前是计算机专业大三学生，目标是成为一名前端开发工程师。熟悉 HTML、CSS 和 JavaScript，用 Vue 做过两个课程项目（电商前端页面、校园活动报名系统），主要负责页面布局、组件封装和接口联调，使用过 Webpack，了解响应式布局。目前算法题刷得少，贪心和动态规划不太熟练，前端性能优化和 TypeScript 也是初学，希望系统帮我分析短板并给出学习建议。</div>
-        </div>
-
-        <!-- 雷达图 -->
-        <div class="ex-chart-card">
-          <h4>能力雷达图</h4>
-          <div ref="exampleChartRef" class="radar-chart"></div>
-        </div>
-
-        <!-- 知识缺口 -->
-        <div class="ex-gaps">
-          <h4>知识缺口</h4>
-          <p class="ex-gap-sub">以下能力领域尚未达标或证据不足，建议重点关注</p>
-          <div class="ex-gap-item"><span>1</span>TypeScript</div>
-          <div class="ex-gap-item"><span>2</span>前端性能优化</div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showExample = false">关闭</el-button>
-        <el-button type="primary" @click="showExample = false; $router.push('/input')">开始我的诊断</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 资源包示例弹窗 -->
-    <el-dialog
-      v-model="showResourceExample"
-      title="资源包示例（仅供参考）"
-      width="720px"
-      top="18vh"
-      :close-on-click-modal="false"
-    >
-      <div class="example-resources">
-        <div class="resource-card">
-          <div class="rc-header">
-            <span class="rc-type-icon">📖</span>
-            <span class="rc-type-tag">讲义</span>
-            <span class="rc-difficulty">
-              <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= 3 }">★</span>
-            </span>
-          </div>
-          <h4 class="rc-title">TypeScript 类型系统入门</h4>
-          <div class="rc-footer">
-            <span class="rc-point">TypeScript</span>
-            <span class="rc-arrow">查看 →</span>
-          </div>
-        </div>
-        <div class="resource-card">
-          <div class="rc-header">
-            <span class="rc-type-icon">✏️</span>
-            <span class="rc-type-tag">练习</span>
-            <span class="rc-difficulty">
-              <span v-for="s in 5" :key="s" class="star" :class="{ on: s <= 4 }">★</span>
-            </span>
-          </div>
-          <h4 class="rc-title">前端性能优化实战练习</h4>
-          <div class="rc-footer">
-            <span class="rc-point">前端性能优化</span>
-            <span class="rc-arrow">查看 →</span>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showResourceExample = false">关闭</el-button>
-        <el-button type="primary" @click="showResourceExample = false; $router.push('/input')">开始我的诊断</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 学习路径示例弹窗 -->
-    <el-dialog
-      v-model="showPathExample"
-      title="学习路径示例（仅供参考）"
-      width="720px"
-      top="8vh"
-      :close-on-click-modal="false"
-    >
-      <div class="example-path">
-        <div class="path-status-row">
-          <span class="path-status-badge active">进行中</span>
-          <span class="path-date">创建于 2026-08-10</span>
-        </div>
-        <div class="timeline">
-          <div
-            v-for="(step, i) in EXAMPLE_PATH_STEPS"
-            :key="step.step"
-            class="timeline-step"
-            :class="{ last: i === EXAMPLE_PATH_STEPS.length - 1 }"
-          >
-            <div class="tl-left">
-              <div class="tl-node" :class="step.status">
-                <span v-if="step.status === 'completed'">✓</span>
-                <span v-else>{{ step.step }}</span>
-              </div>
-              <div v-if="i < EXAMPLE_PATH_STEPS.length - 1" class="tl-line" :class="{ filled: step.status === 'completed' }"></div>
-            </div>
-            <div class="tl-content">
-              <div class="tl-title-row">
-                <span class="tl-type-icon">{{ step.resource_type === '讲义' ? '📖' : '✏️' }}</span>
-                <span class="tl-point">{{ step.knowledge_point }}</span>
-                <span class="tl-type-tag">{{ step.resource_type }}</span>
-                <span v-if="step.weight === 'high'" class="tl-weight high">核心</span>
-                <span v-else-if="step.weight === 'mid'" class="tl-weight mid">支撑</span>
-              </div>
-              <div class="tl-meta">
-                <span>⏱ {{ step.estimated_time }} 分钟</span>
-                <span v-if="step.prerequisite">📎 前置：{{ step.prerequisite }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="showPathExample = false">关闭</el-button>
-        <el-button type="primary" @click="showPathExample = false; $router.push('/input')">开始我的诊断</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { Component } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
+import {
+  Aim, ArrowRight, Box, Briefcase, CircleCheck, Cloudy, Connection,
+  DataAnalysis, DocumentChecked, Files, Guide, MagicStick, Monitor, Service, UserFilled, VideoPlay,
+} from '@element-plus/icons-vue'
+import { getJobList, type JobInfo } from '@/api/jobs'
+import { useUserStore } from '@/stores/user'
 
-const showExample = ref(false)
-const showResourceExample = ref(false)
-const showPathExample = ref(false)
-const exampleChartRef = ref<HTMLDivElement | null>(null)
-let exampleChart: echarts.ECharts | null = null
+const router = useRouter()
+const store = useUserStore()
+const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const jobs = ref<JobInfo[]>([])
+const jobsLoading = ref(true)
+const jobsError = ref(false)
+const heroRadarRef = ref<HTMLDivElement | null>(null)
+let heroRadar: echarts.ECharts | null = null
 
-// 示例雷达图 — 16 维度的静态 mock 数据
-const EXAMPLE_VECTOR = [
-  { name: '编程基础', value: 0.8, weight: 'high' as const },
-  { name: '数据结构与算法', value: 0.6, weight: 'mid' as const },
-  { name: '计算机网络', value: 0.9, weight: 'mid' as const },
-  { name: '操作系统', value: 0.7, weight: 'low' as const },
-  { name: '前端技术', value: 0.5, weight: 'high' as const },
-  { name: '后端技术', value: 0.8, weight: 'mid' as const },
-  { name: '数据库', value: 0.6, weight: 'mid' as const },
-  { name: '系统设计', value: 0.9, weight: 'mid' as const },
-  { name: '运维部署', value: 0.7, weight: 'low' as const },
-  { name: '测试与质量', value: 0.8, weight: 'mid' as const },
-  { name: '产品分析', value: 0.6, weight: 'mid' as const },
-  { name: '项目管理', value: 0.5, weight: 'low' as const },
-  { name: '沟通表达', value: 0.9, weight: 'mid' as const },
-  { name: '逻辑思维', value: 0.7, weight: 'mid' as const },
-  { name: '学习能力', value: 0.8, weight: 'mid' as const },
-  { name: '安全规范', value: 0.6, weight: 'low' as const },
+const workflow: Array<{ icon: Component; title: string; detail: string }> = [
+  { icon: Briefcase, title: '岗位选择', detail: '选择目标职业方向' },
+  { icon: DocumentChecked, title: '资料审查', detail: 'AI 审查学习与项目资料' },
+  { icon: DataAnalysis, title: '能力诊断', detail: '多维度能力精准评估' },
+  { icon: MagicStick, title: '个性化学习建议', detail: '生成专属成长路径' },
+]
+const roleMeta: Array<{ icon: Component; summary: string }> = [
+  { icon: Monitor, summary: '构建高性能、体验稳定的 Web 产品与交互。' },
+  { icon: Box, summary: '设计稳定可扩展的服务与高质量业务系统。' },
+  { icon: Cloudy, summary: '保障系统高可用、安全与自动化运维。' },
+  { icon: UserFilled, summary: '洞察需求，定义产品价值并推动落地。' },
+]
+const proofPoints: Array<{ icon: Component; title: string; detail: string }> = [
+  { icon: Connection, title: '多 Agent 协同', detail: '多角色 Agent 分工分析，过程可见、决策可解释。' },
+  { icon: Files, title: '证据驱动', detail: '结论绑定学习资料与项目证据，可追溯、可复核。' },
+  { icon: CircleCheck, title: '审核纠偏', detail: '生成内容经过来源校验与交叉审核，降低幻觉风险。' },
+  { icon: Guide, title: '路径生成', detail: '结合岗位要求与个人差距，生成可执行学习路径。' },
 ]
 
-// 示例学习路径 — 静态 mock（对应前端开发工程师，HTML→CSS→JS→Vue→React→TypeScript）
-const EXAMPLE_PATH_STEPS = [
-  { step: 1, knowledge_point: 'HTML', resource_type: '讲义', estimated_time: 30, prerequisite: null, status: 'pending', weight: 'high' },
-  { step: 2, knowledge_point: 'CSS', resource_type: '练习', estimated_time: 30, prerequisite: 'HTML', status: 'pending', weight: 'high' },
-  { step: 3, knowledge_point: 'JavaScript', resource_type: '讲义', estimated_time: 30, prerequisite: 'CSS', status: 'pending', weight: 'high' },
-  { step: 4, knowledge_point: 'Vue', resource_type: '练习', estimated_time: 30, prerequisite: 'JavaScript', status: 'pending', weight: 'mid' },
-  { step: 5, knowledge_point: 'React', resource_type: '讲义', estimated_time: 30, prerequisite: 'Vue', status: 'pending', weight: 'mid' },
-  { step: 6, knowledge_point: 'TypeScript', resource_type: '练习', estimated_time: 30, prerequisite: 'React', status: 'pending', weight: 'mid' },
-]
-
-function initExampleChart() {
-  if (!exampleChartRef.value) return
-  const weightColors: Record<string, string> = { high: '#dc2626', mid: '#f59e0b', low: '#2563eb' }
-  exampleChart = echarts.init(exampleChartRef.value)
-  exampleChart.setOption({
-    tooltip: {
-      trigger: 'item',
-      formatter: (p: any) => {
-        const d = EXAMPLE_VECTOR[p.dataIndex]
-        return `<b>${p.name}</b><br/>得分：${(d.value * 100).toFixed(0)}<br/>权重：${d.weight === 'high' ? '高' : d.weight === 'mid' ? '中' : '低'}`
-      },
-    },
+async function loadJobs() {
+  jobsLoading.value = true
+  jobsError.value = false
+  try { jobs.value = await getJobList() } catch { jobsError.value = true } finally { jobsLoading.value = false }
+}
+function startAssessment(jobId?: string) {
+  if (!store.isLoggedIn && !publicPreview) {
+    router.push({ path: '/login', query: { next: jobId ? `/input?job=${jobId}` : '/input' } })
+    return
+  }
+  router.push({ path: '/input', query: jobId ? { job: jobId } : undefined })
+}
+function scrollToRoles() { document.querySelector('#roles')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+function moveSpotlight(event: PointerEvent) {
+  const element = event.currentTarget as HTMLElement
+  const rect = element.getBoundingClientRect()
+  element.style.setProperty('--spot-x', `${event.clientX - rect.left}px`)
+  element.style.setProperty('--spot-y', `${event.clientY - rect.top}px`)
+  element.style.setProperty('--hub-shift-x', `${((event.clientX - rect.left) / rect.width - .5) * 8}px`)
+  element.style.setProperty('--hub-shift-y', `${((event.clientY - rect.top) / rect.height - .5) * 6}px`)
+}
+function resetSpotlight(event: PointerEvent) {
+  const element = event.currentTarget as HTMLElement
+  element.style.setProperty('--spot-x', '50%')
+  element.style.setProperty('--spot-y', '50%')
+  element.style.setProperty('--hub-shift-x', '0px')
+  element.style.setProperty('--hub-shift-y', '0px')
+}
+function renderHeroRadar() {
+  if (!heroRadarRef.value) return
+  heroRadar?.dispose()
+  heroRadar = echarts.init(heroRadarRef.value)
+  heroRadar.setOption({
+    animationDuration: 700,
     radar: {
-      center: ['50%', '55%'],
-      radius: '65%',
-      axisName: { fontSize: 12, color: '#555' },
-      indicator: EXAMPLE_VECTOR.map(d => ({
-        name: d.name, max: 1,
-        color: weightColors[d.weight] || '#555',
-      })),
+      center: ['50%', '53%'], radius: '62%', splitNumber: 4,
+      indicator: ['工程能力', '项目经验', '学习潜力', '基础能力', '软实力'].map(name => ({ name, max: 100 })),
+      axisName: { color: '#617168', fontSize: 8 },
+      splitArea: { areaStyle: { color: ['rgba(222,250,222,.06)', 'rgba(222,250,222,.2)'] } },
+      splitLine: { lineStyle: { color: 'rgba(7,148,85,.17)' } },
+      axisLine: { lineStyle: { color: 'rgba(7,148,85,.17)' } },
     },
-    series: [{
-      type: 'radar',
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: { width: 2, color: '#2563eb' },
-      areaStyle: { color: 'rgba(37,99,235,0.12)' },
-      itemStyle: { color: '#2563eb' },
-      data: [{ value: EXAMPLE_VECTOR.map(d => d.value), name: '能力值' }],
-    }],
+    series: [{ type: 'radar', symbol: 'circle', symbolSize: 3, lineStyle: { color: '#079455', width: 1.5 }, itemStyle: { color: '#079455' }, areaStyle: { color: 'rgba(34,181,107,.31)' }, data: [{ value: [86, 76, 90, 82, 78] }] }],
   })
 }
-
-function disposeExampleChart() {
-  exampleChart?.dispose()
-  exampleChart = null
-}
+function handleResize() { heroRadar?.resize() }
+onMounted(async () => { await loadJobs(); await nextTick(); renderHeroRadar(); window.addEventListener('resize', handleResize) })
+onBeforeUnmount(() => { heroRadar?.dispose(); window.removeEventListener('resize', handleResize) })
 </script>
 
 <style scoped>
-/* ---- Hero区域 ---- */
-.hero {
-  display: flex;
-  padding: 60px 80px;
-  gap: 60px;
-  background: var(--hero-gradient);
-}
-
-.hero-left {
-  flex: 1;
-  max-width: 520px;
-}
-
-.hero-title {
-  font-size: 42px;
-  font-weight: 800;
-  line-height: 1.3;
-  color: #111827;
-  margin-bottom: 16px;
-}
-
-.hero-subtitle {
-  font-size: 18px;
-  color: #2563eb;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.hero-desc {
-  font-size: 15px;
-  color: #666;
-  line-height: 1.8;
-  margin-bottom: 28px;
-}
-
-.hero-buttons {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
-.tag-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tag-label {
-  font-size: 14px;
-  color: #666;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.tag {
-  padding: 4px 12px;
-  background: #e0e7ff;
-  color: #4338ca;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-/* ---- Hero右侧卡片 ---- */
-.hero-right {
-  flex: 1;
-  max-width: 560px;
-}
-
-.flow-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-}
-
-.flow-title {
-  font-size: 18px;
-  font-weight: 700;
-  text-align: center;
-  margin-bottom: 32px;
-  color: #111827;
-}
-
-.flow-steps {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.flow-step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  flex: 1;
-}
-
-.step-number {
-  width: 32px;
-  height: 32px;
-  background: #2563eb;
-  color: #fff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-
-.step-icon {
-  width: 64px;
-  height: 64px;
-  background: #eef2ff;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  margin-bottom: 12px;
-}
-
-.step-name {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #111827;
-}
-
-.step-desc {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.5;
-}
-
-.flow-arrow {
-  display: flex;
-  align-items: center;
-  color: #d0d5dd;
-  font-size: 20px;
-  margin-top: 40px;
-}
-
-.flow-tags {
-  display: flex;
-  justify-content: space-around;
-  margin-top: 20px;
-}
-
-.flow-tag {
-  padding: 4px 10px;
-  background: #f0fdf4;
-  color: #16a34a;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.flow-bottom {
-  text-align: center;
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 8px;
-  margin-top: 20px;
-}
-
-.flow-bottom span {
-  color: #2563eb;
-  font-size: 13px;
-}
-
-/* ---- 功能卡片区域 ---- */
-.features {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  padding: 40px 80px;
-}
-
-.feature-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 28px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.feature-card-full {
-  grid-column: 1 / -1;
-}
-
-.feature-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.feature-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-}
-
-.feature-icon.blue {
-  background: #eef2ff;
-  color: #2563eb;
-}
-
-.feature-icon.green {
-  background: #f0fdf4;
-  color: #16a34a;
-}
-
-.feature-icon.purple {
-  background: #faf5ff;
-  color: #9333ea;
-}
-
-.feature-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.feature-badge {
-  padding: 2px 8px;
-  background: #dbeafe;
-  color: #2563eb;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.feature-badge.green {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.feature-badge.purple {
-  background: #f3e8ff;
-  color: #9333ea;
-}
-
-.feature-desc {
-  font-size: 14px;
-  color: #666;
-  line-height: 1.7;
-  margin-bottom: 16px;
-}
-
-.feature-link {
-  color: #2563eb;
-  font-size: 14px;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.feature-link:hover {
-  text-decoration: underline;
-}
-
-/* ---- 底部特色 ---- */
-.bottom-features {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0;
-  margin: 0 80px 60px;
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-}
-
-.bottom-feature {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 24px 28px;
-  border-right: 1px solid #f0f0f0;
-}
-
-.bottom-feature:last-child {
-  border-right: none;
-}
-
-.bottom-feature-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.bottom-feature-icon.blue {
-  background: #eef2ff;
-  color: #2563eb;
-}
-
-.bottom-feature-icon.cyan {
-  background: #ecfeff;
-  color: #0891b2;
-}
-
-.bottom-feature-icon.green {
-  background: #f0fdf4;
-  color: #16a34a;
-}
-
-.bottom-feature-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 4px;
-}
-
-.bottom-feature-desc {
-  font-size: 13px;
-  color: #666;
-}
-
-/* ---- 页脚 ---- */
-.footer {
-  text-align: center;
-  padding: 24px;
-  color: #999;
-  font-size: 13px;
-  border-top: 1px solid #eee;
-  background: #fff;
-}
-
-/* ---- 示例报告弹窗内容 ---- */
-.example-report {
-  padding: 0 8px;
-}
-
-.ex-overview {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.ex-mastery {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 24px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.ex-label {
-  font-size: 14px;
-  color: #888;
-  margin-bottom: 14px;
-}
-
-/* 掌握度圆环（与 DiagnosisPage 一致） */
-.mastery-ring {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  margin: 0 auto 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+.home-page {
   position: relative;
-  --pct: 0;
-  background: conic-gradient(#2563eb calc(var(--pct) * 360deg), #e5e7eb 0deg);
+  overflow: hidden;
+  min-height: calc(100vh - 78px);
+  padding: 6px 24px 8px;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 75% 26%, rgba(222,250,222,.52), rgba(245,255,248,.18) 31%, transparent 61%),
+    radial-gradient(ellipse at 64% 98%, rgba(158,239,194,.16), transparent 43%),
+    linear-gradient(180deg, #fff 0%, #fbfefc 58%, #f8fcfa 100%);
 }
+.home-page .content-width { width: min(1490px, 100%); }
+.hero {
+  height: 408px;
+  display: grid;
+  grid-template-columns: minmax(0, 40fr) minmax(0, 60fr);
+  align-items: center;
+  gap: 0;
+  position: relative;
+}
+.hero-copy { position: relative; z-index: 9; padding-left: clamp(0px, 1.6vw, 26px); transform: translateY(-2px); }
+.hero-pill { margin-bottom: 20px; }
+.live-dot { height: 7px; width: 7px; border-radius: 50%; background: var(--gradient-primary); box-shadow: 0 0 10px rgba(34,181,107,.42); animation: breathe 2.5s ease-in-out infinite; }
+.hero h1 { margin: 0; color: var(--ink); font-size: clamp(50px, 3.4vw, 62px); line-height: 1.11; font-weight: 850; letter-spacing: 0; }
+.headline-line { display: block; white-space: nowrap; }
+.gradient-title { color: transparent; background: var(--gradient-number); background-clip: text; -webkit-background-clip: text; }
+.hero-copy > p { max-width: 560px; margin: 23px 0 25px; color: var(--ink-soft); line-height: 1.72; font-size: 14px; }
+.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero-primary, .hero-secondary { min-height: 48px; padding: 0 22px; border-radius: 15px; display: inline-flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 750; cursor: pointer; }
+.hero-primary svg, .hero-secondary svg { width: 17px; }
+.hero-secondary { color: var(--ink); background: rgba(255,255,255,.57); border: 1px solid rgba(20,86,53,.1); box-shadow: inset 0 1px 0 rgba(255,255,255,.94), 0 9px 23px rgba(33,82,58,.055); backdrop-filter: blur(17px); transition: transform .2s ease, box-shadow .2s ease; }
+.hero-secondary:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 #fff, 0 14px 26px rgba(33,82,58,.1); }
+.hero-secondary svg { color: var(--green-deep); }
 
-.mastery-ring::after {
+.spatial-hub {
+  --spot-x: 50%;
+  --spot-y: 50%;
+  --hub-shift-x: 0px;
+  --hub-shift-y: 0px;
+  width: calc(100% + 28px);
+  height: 418px;
+  margin: -9px 0 -1px -40px;
+  position: relative;
+  justify-self: start;
+  z-index: 2;
+  isolation: isolate;
+  overflow: visible;
+  perspective: 1180px;
+  transform-style: preserve-3d;
+}
+.spatial-hub::before {
   content: '';
   position: absolute;
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: #f8fafc;
+  inset: 2% 0 0 3%;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(300px circle at var(--spot-x) var(--spot-y), rgba(255,255,255,.4), transparent 69%);
+  opacity: .74;
 }
+.hub-visual {
+  position: absolute;
+  left: -25%;
+  top: -12%;
+  width: 125%;
+  height: 124%;
+  object-fit: cover;
+  object-position: center;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  transform: translate3d(var(--hub-shift-x), var(--hub-shift-y), 0) perspective(1100px) rotateX(2deg) rotateZ(-.42deg);
+  transform-origin: 56% 57%;
+  transition: transform .38s cubic-bezier(.2,.8,.2,1);
+}
+.hub-visual-back { z-index: 0; filter: saturate(.96) contrast(.99); mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.44) 11%, #000 27%, #000 100%); }
+.hub-visual-front { z-index: 4; opacity: .34; filter: saturate(1.06) contrast(1.02); -webkit-mask-image: linear-gradient(180deg, transparent 0 58%, rgba(0,0,0,.76) 74%, #000 100%), linear-gradient(90deg, transparent 0%, #000 24%, #000 100%); -webkit-mask-composite: source-in; mask-image: linear-gradient(180deg, transparent 0 58%, rgba(0,0,0,.76) 74%, #000 100%); }
+.float-card {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --tilt-z: 0deg;
+  --depth-z: 0px;
+  --depth-scale: 1;
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.82);
+  border-radius: 19px;
+  background:
+    linear-gradient(142deg, rgba(255,255,255,.64), rgba(247,255,250,.27) 50%, rgba(189,244,207,.16)),
+    rgba(249,255,251,.34);
+  box-shadow:
+    0 29px 64px rgba(16,80,45,.11),
+    0 8px 22px rgba(36,133,77,.055),
+    8px 13px 38px rgba(96,228,151,.055),
+    inset 0 1px 1px rgba(255,255,255,.99),
+    inset -1px -1px 1px rgba(49,174,100,.055);
+  backdrop-filter: blur(30px) saturate(168%);
+  -webkit-backdrop-filter: blur(30px) saturate(168%);
+  color: var(--ink);
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotateZ(var(--tilt-z)) translate3d(0,0,var(--depth-z)) scale(var(--depth-scale));
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.float-card::before { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(118deg, rgba(255,255,255,.74), transparent 25%, rgba(132,235,174,.08) 62%, rgba(255,255,255,.24)); opacity: .86; }
+.float-card::after { content: ''; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.24), transparent 37%), radial-gradient(circle at 78% 110%, rgba(111,231,160,.13), transparent 45%); }
+.float-card > * { position: relative; z-index: 1; }
+.depth-front { --depth-scale: 1; opacity: .98; }
+.depth-middle { --depth-scale: .96; opacity: .93; }
+.depth-back { --depth-scale: .93; opacity: .88; filter: saturate(.95); }
+.card-kicker { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 10px; font-weight: 700; }
+.card-kicker svg { width: 14px; height: 14px; color: var(--green-deep); }
+.score-card { --tilt-x: 2deg; --tilt-y: 6deg; --tilt-z: -1.1deg; --depth-z: 26px; left: 19%; top: 3%; width: 144px; height: 160px; padding: 16px 15px; z-index: 3; animation: spatial-float 5.7s .2s ease-in-out infinite; }
+.score-row { display: flex; align-items: end; gap: 3px; margin-top: 12px; }
+.score-row strong { font-size: 39px; line-height: 1; color: transparent; background: var(--gradient-number); background-clip: text; -webkit-background-clip: text; }
+.score-row span { margin-bottom: 4px; color: var(--ink-faint); font-size: 11px; }
+.score-card small { display: block; margin-top: 12px; color: var(--green-deep); font-size: 9px; line-height: 1.55; }
+.radar-card { --tilt-x: 2.3deg; --tilt-y: -6deg; --tilt-z: .9deg; --depth-z: -10px; right: 4%; top: 2%; width: 190px; height: 174px; padding: 13px 14px; transform-origin: right top; animation: spatial-float 6.2s ease-in-out infinite; }
+.hero-radar { height: 139px; width: 100%; }
+.agent-card { --tilt-x: -1.6deg; --tilt-y: 7deg; --tilt-z: -.7deg; --depth-z: 7px; left: 11%; bottom: 11%; width: 208px; height: 116px; padding: 15px; display: flex; gap: 12px; align-items: flex-start; z-index: 3; transform-origin: left center; animation: spatial-float 5.2s .5s ease-in-out infinite; }
+.agent-icon { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--gradient-primary); box-shadow: inset 0 1px 1px rgba(255,255,255,.63), 0 9px 19px rgba(15,164,91,.2); animation: agent-bob 3.4s ease-in-out infinite; }
+.agent-icon svg { width: 22px; }
+.agent-card b { font-size: 12px; }
+.agent-card p { margin: 6px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.5; }
+.path-card { --tilt-x: -2deg; --tilt-y: -6deg; --tilt-z: .65deg; --depth-z: 22px; right: 2%; bottom: 7%; width: 238px; height: 137px; padding: 15px 16px; animation: spatial-float 6s .7s ease-in-out infinite; }
+.path-line { margin-top: 9px; display: grid; grid-template-columns: 57px 1fr auto; align-items: center; gap: 7px; font-size: 8px; color: var(--ink-soft); }
+.path-line i { height: 5px; overflow: hidden; border-radius: 99px; background: rgba(44,126,80,.1); }
+.path-line i b { display: block; height: 100%; border-radius: inherit; background: var(--gradient-progress); }
+.path-line em { min-width: 31px; color: var(--green-deep); font-style: normal; text-align: right; }
+.path-line.muted { opacity: .55; }
+@keyframes spatial-float {
+  0%,100% { transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotateZ(var(--tilt-z)) translate3d(0,0,var(--depth-z)) scale(var(--depth-scale)); }
+  50% { transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) rotateZ(var(--tilt-z)) translate3d(0,-6px,var(--depth-z)) scale(var(--depth-scale)); }
+}
+@keyframes agent-bob { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-3px) rotate(2deg); } }
 
-.mastery-value {
+.workflow {
   position: relative;
-  z-index: 1;
-  font-size: 30px;
-  font-weight: 800;
-  color: #111827;
-  line-height: 1;
-}
-
-.mastery-unit {
-  position: relative;
-  z-index: 1;
-  font-size: 12px;
-  color: #888;
-}
-
-.mastery-tag {
-  font-size: 13px;
-  font-weight: 600;
-  padding: 3px 14px;
-  border-radius: 12px;
-}
-
-.mastery-tag.mid { background: #fef3c7; color: #d97706; }
-
-.ex-meta {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  justify-content: center;
-}
-
-.ex-meta-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  color: #888;
-}
-
-.ex-meta-item strong {
-  color: #111827;
-  font-size: 15px;
-}
-
-.ex-input {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px 24px;
-  margin-bottom: 20px;
-}
-
-.ex-input h4 {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 10px;
-}
-
-.ex-input-body {
-  font-size: 14px;
-  color: #444;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: #fff;
-  border-radius: 8px;
-  padding: 14px 16px;
-}
-
-.ex-chart-card {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px 24px;
-  margin-bottom: 20px;
-}
-
-.ex-chart-card h4 {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 4px;
-}
-
-.radar-chart {
-  width: 100%;
-  height: 360px;
-}
-
-.ex-gaps {
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 20px 24px;
-}
-
-.ex-gaps h4 {
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 2px;
-}
-
-.ex-gap-sub {
-  font-size: 12px;
-  color: #999;
-  margin-bottom: 14px;
-}
-
-.ex-gap-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #fef2f2;
-  border-radius: 6px;
-  border-left: 3px solid #fca5a5;
-  font-size: 14px;
-  color: #991b1b;
-  margin-bottom: 8px;
-}
-
-.ex-gap-item span {
-  width: 22px;
-  height: 22px;
-  background: #fca5a5;
-  color: #fff;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-/* ---- 资源包示例卡片 ---- */
-.example-resources {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.resource-card {
-  width: 300px;
-  background: #fff;
-  border: 1px solid #f0f0f0;
-  border-radius: 12px;
-  padding: 20px 24px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.resource-card:hover {
-  border-color: #2563eb;
-  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.08);
-  transform: translateY(-1px);
-}
-
-.rc-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.rc-type-icon {
-  font-size: 20px;
-}
-
-.rc-type-tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: #eef2ff;
-  color: #2563eb;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.rc-difficulty {
-  margin-left: auto;
-  display: flex;
-  gap: 1px;
-}
-
-.star {
-  font-size: 13px;
-  color: #e5e7eb;
-}
-
-.star.on {
-  color: #f59e0b;
-}
-
-.rc-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 10px;
-  line-height: 1.4;
-}
-
-.rc-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.rc-point {
-  font-size: 12px;
-  color: #888;
-  background: #f5f7fa;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.rc-arrow {
-  font-size: 13px;
-  color: #2563eb;
-}
-
-/* ---- 学习路径示例时间线 ---- */
-.example-path {
-  padding: 0 8px;
-}
-
-.path-status-row {
-  display: flex;
+  z-index: 10;
+  min-height: 76px;
+  margin-top: -8px;
+  padding: 10px 22px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #f0f0f0;
+  border: 1px solid rgba(255,255,255,.88);
+  border-radius: 20px;
+  background: linear-gradient(110deg, rgba(255,255,255,.64), rgba(239,255,245,.36));
+  box-shadow: 0 18px 42px rgba(25,87,55,.07), inset 0 1px 1px #fff;
+  backdrop-filter: blur(23px) saturate(145%);
 }
+.workflow-step { min-width: 0; display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; }
+.workflow-index { color: var(--green-deep); font-size: 15px; }
+.workflow-icon { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; color: var(--green-deep); background: rgba(222,250,222,.66); box-shadow: inset 0 1px 0 #fff, 0 8px 19px rgba(35,142,81,.06); }
+.workflow-icon svg { width: 18px; }
+.workflow-step b, .workflow-step small { display: block; }
+.workflow-step b { font-size: 12px; }
+.workflow-step small { margin-top: 2px; color: var(--ink-soft); font-size: 9px; white-space: nowrap; }
+.workflow-arrow { width: 22px; color: rgba(7,148,85,.48); }
+.workflow-arrow svg { width: 18px; }
 
-.path-status-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 12px;
+.role-section { padding-top: 12px; }
+.section-heading { min-height: 40px; display: flex; align-items: end; justify-content: space-between; gap: 26px; margin-bottom: 9px; }
+.section-heading h2 { margin: 4px 0 0; font-size: 25px; line-height: 1.18; }
+.section-heading p { max-width: 490px; margin: 0 0 1px; color: var(--ink-soft); font-size: 10px; line-height: 1.55; text-align: right; }
+.role-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.role-tile {
+  height: 146px;
+  padding: 17px 18px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 19px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .28s ease, box-shadow .28s ease, border-color .28s ease;
 }
+.role-tile:hover { transform: translateY(-4px); border-color: rgba(189,244,207,.82); box-shadow: var(--surface-shadow-raised), inset 0 1px 1px #fff; }
+.role-object { position: absolute; right: 14px; bottom: 13px; width: 72px; height: 72px; display: grid; place-items: center; border-radius: 21px; color: #fff; background: linear-gradient(145deg, rgba(169,245,198,.88), rgba(34,181,107,.88) 58%, rgba(7,148,85,.96)); border: 1px solid rgba(255,255,255,.72); box-shadow: inset 0 1px 1px rgba(255,255,255,.66), 0 16px 30px rgba(15,164,91,.17), -8px -8px 22px rgba(222,250,222,.34); transform: perspective(300px) rotateX(5deg) rotateY(-9deg); transition: transform .28s ease; }
+.role-object::after { content: ''; position: absolute; inset: 8px; border-radius: 15px; border: 1px solid rgba(255,255,255,.34); pointer-events: none; }
+.role-object svg { width: 31px; height: 31px; }
+.role-tile:hover .role-object { transform: perspective(300px) translateY(-3px) rotateX(3deg) rotateY(-5deg); }
+.role-2 .role-object { border-radius: 17px; transform: perspective(300px) rotateX(5deg) rotateY(8deg) rotateZ(2deg); }
+.role-3 .role-object { border-radius: 24px 24px 17px 17px; transform: perspective(300px) rotateX(7deg) rotateY(-7deg); }
+.role-4 .role-object { border-radius: 50%; transform: perspective(300px) rotateX(4deg) rotateY(8deg); }
+.role-copy { max-width: 66%; }
+.role-copy h3 { margin: 0; font-size: 16px; }
+.role-copy p { margin: 8px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.55; }
+.role-more { position: absolute; left: 18px; bottom: 15px; display: inline-flex; align-items: center; gap: 7px; color: var(--green-deep); font-size: 10px; font-weight: 700; }
+.role-more svg { width: 13px; }
+.role-state { padding: 24px; border-radius: var(--radius-lg); display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.role-state button { border: 0; border-radius: 10px; padding: 9px 13px; background: var(--gradient-primary); color: #fff; cursor: pointer; }
+.skeleton { background: linear-gradient(100deg, #f2faf5 30%, #fcfffd 47%, #f2faf5 63%); background-size: 200% 100%; animation: loading 1.4s infinite; }
+@keyframes loading { to { background-position: -200% 0; } }
+.proof-section { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 10px; padding: 10px 7px; border-radius: 18px; background: linear-gradient(110deg, rgba(255,255,255,.57), rgba(239,255,245,.3)); border: 1px solid rgba(255,255,255,.86); box-shadow: 0 15px 36px rgba(25,87,55,.055), inset 0 1px 1px #fff; backdrop-filter: blur(23px) saturate(145%); }
+.proof-point { min-height: 58px; padding: 5px 17px; display: flex; gap: 11px; align-items: center; border-right: 1px solid var(--line); }
+.proof-point:last-child { border-right: 0; }
+.proof-icon { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: var(--green-deep); background: rgba(222,250,222,.68); box-shadow: inset 0 1px 0 #fff; }
+.proof-icon svg { width: 18px; }
+.proof-point h3 { margin: 0 0 4px; font-size: 12px; }
+.proof-point p { margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.45; }
+.home-footer { min-height: 38px; margin-top: 7px; padding: 6px 2px 0; font-size: 10px; }
+.footer-brand { display: inline-flex; align-items: center; gap: 8px; }
+.footer-brand em { color: var(--ink-faint); font-style: normal; font-weight: 400; }
+.footer-mark { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: var(--gradient-primary); }
+.footer-mark svg { width: 15px; }
+.footer-links { display: flex; gap: 26px; }
+.footer-links a { color: var(--ink-soft); text-decoration: none; }
+.footer-links a:hover { color: var(--green-deep); }
 
-.path-status-badge.active {
-  background: #dbeafe;
-  color: #2563eb;
+@media (max-width: 1366px) {
+  .home-page { padding-top: 3px; }
+  .hero { height: 366px; grid-template-columns: minmax(0, 42fr) minmax(0, 58fr); }
+  .hero h1 { font-size: 47px; }
+  .hero-pill { margin-bottom: 16px; }
+  .hero-copy > p { margin-block: 18px 21px; font-size: 12px; }
+  .hero-primary, .hero-secondary { min-height: 44px; }
+  .spatial-hub { height: 380px; margin-left: -35px; }
+  .score-card { left: 17%; top: 2%; transform-origin: left top; }
+  .radar-card { right: 3%; top: 1%; transform-origin: right top; }
+  .agent-card { left: 8%; bottom: 9%; }
+  .path-card { right: 1%; bottom: 5%; }
+  .workflow { min-height: 70px; margin-top: -4px; padding-block: 8px; }
+  .role-section { padding-top: 8px; }
+  .section-heading { min-height: 36px; margin-bottom: 7px; }
+  .section-heading h2 { font-size: 22px; }
+  .role-tile { height: 136px; }
+  .proof-section { margin-top: 8px; padding-block: 7px; }
+  .proof-point { min-height: 52px; }
 }
-
-.path-date {
-  font-size: 13px;
-  color: #999;
+@media (max-width: 1160px) {
+  .hero { grid-template-columns: 1fr 1fr; gap: 0; }
+  .hero h1 { font-size: 43px; }
+  .headline-line { white-space: normal; }
+  .spatial-hub { width: calc(100% + 8px); margin-left: -18px; }
+  .score-card { left: 12%; }
+  .agent-card { left: 4%; }
+  .radar-card, .path-card { right: 1%; }
+  .role-grid, .proof-section { grid-template-columns: repeat(2, 1fr); }
+  .proof-point:nth-child(2) { border-right: 0; }
+  .proof-point:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .role-tile { height: 142px; }
+  .footer-links { display: none; }
 }
-
-.timeline {
-  padding-left: 4px;
-}
-
-.timeline-step {
-  display: flex;
-  gap: 16px;
-}
-
-.timeline-step:not(.last) {
-  padding-bottom: 4px;
-}
-
-.tl-left {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.tl-node {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-  background: #f0f0f0;
-  color: #999;
-}
-
-.tl-node.completed {
-  background: #16a34a;
-  color: #fff;
-}
-
-.tl-node.in_progress {
-  background: #2563eb;
-  color: #fff;
-}
-
-.tl-line {
-  width: 2px;
-  flex: 1;
-  min-height: 28px;
-  background: #e5e7eb;
-}
-
-.tl-line.filled {
-  background: #16a34a;
-}
-
-.tl-content {
-  flex: 1;
-  padding: 6px 0 16px;
-}
-
-.tl-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tl-type-icon {
-  font-size: 16px;
-}
-
-.tl-point {
-  font-size: 15px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.tl-type-tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  background: #f3f4f6;
-  color: #666;
-  border-radius: 4px;
-}
-
-.tl-weight {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
-}
-
-.tl-weight.high {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.tl-weight.mid {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.tl-meta {
-  display: flex;
-  gap: 16px;
-  margin-top: 6px;
-  font-size: 13px;
-  color: #999;
+@media (max-width: 760px) {
+  .home-page { padding: 10px 14px 20px; }
+  .hero { height: auto; grid-template-columns: 1fr; }
+  .hero-copy { padding: 0 3px; transform: none; }
+  .hero h1 { font-size: 38px; }
+  .headline-line { white-space: normal; }
+  .spatial-hub { width: auto; height: 350px; justify-self: stretch; order: -1; margin: -22px -36px 0; overflow: hidden; }
+  .hub-visual { left: -34%; width: 142%; }
+  .float-card { animation: none; }
+  .score-card { left: 12%; top: 5%; transform: scale(.72) rotateZ(-1deg); transform-origin: left top; }
+  .radar-card { right: 3%; top: 4%; transform: scale(.65) rotateZ(1deg); transform-origin: right top; }
+  .agent-card { left: 8%; bottom: 7%; transform: scale(.72) rotateZ(-.6deg); transform-origin: left bottom; }
+  .path-card { right: 1%; bottom: 5%; transform: scale(.67) rotateZ(.6deg); transform-origin: right bottom; }
+  .workflow { grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px; padding: 13px; }
+  .workflow-arrow { display: none; }
+  .workflow-step small { white-space: normal; }
+  .role-section { padding-top: 30px; }
+  .section-heading { display: block; }
+  .section-heading p { margin-top: 10px; text-align: left; }
+  .role-grid, .proof-section { grid-template-columns: 1fr; }
+  .role-tile { height: 148px; }
+  .proof-point { border-right: 0; border-bottom: 1px solid var(--line); }
+  .proof-point:last-child { border-bottom: 0; }
+  .home-footer { align-items: flex-start; }
+  .footer-brand em { display: none; }
 }
 </style>

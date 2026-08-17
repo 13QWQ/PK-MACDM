@@ -1,12 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/api/request'
 
+// 仅供本地界面验收使用。未设置时（含生产构建）仍按正常账户权限保护页面。
+const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+
 const routes = [
   {
     path: '/',
     name: 'home',
     component: () => import('@/views/HomePage.vue'),
-    meta: { title: '首页' },
+    // 首页只展示产品流程与示例，不读取用户私密数据，允许未登录访问。
+    meta: { title: '首页', noAuth: true },
   },
   {
     path: '/login',
@@ -27,10 +31,16 @@ const routes = [
     meta: { title: '能力诊断' },
   },
   {
-    path: '/resources/:assessmentId',
-    name: 'resources',
+    path: '/library',
+    name: 'library',
     component: () => import('@/views/ResourcesPage.vue'),
-    meta: { title: '资源包' },
+    meta: { title: '资料库' },
+  },
+  {
+    path: '/resources/:assessmentId',
+    name: 'resourcesLegacy',
+    component: () => import('@/views/ResourcesPage.vue'),
+    meta: { title: '资料库' },
   },
   {
     path: '/resource/:id',
@@ -68,6 +78,12 @@ router.beforeEach((to, _from, next) => {
 
   // 无需登录的页面直接放行
   if (to.meta.noAuth) {
+    next()
+    return
+  }
+
+  // 本地预览模式只解除路由跳转，接口层仍会要求有效账户令牌。
+  if (publicPreview) {
     next()
     return
   }
