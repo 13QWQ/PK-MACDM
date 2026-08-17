@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.resource import Resource
 from models.assessment import Assessment
+from models.resource_bookmark import ResourceBookmark
 from models.user import User
 from routers.auth import get_current_user
 from adapters import vector_adapter
@@ -31,6 +32,11 @@ class SearchResult(BaseModel):
 
 class SearchResponse(BaseModel):
     items: list[SearchResult]
+
+
+class BookmarkResponse(BaseModel):
+    resource_id: str
+    created_at: datetime
 
 
 class ResourceResponse(BaseModel):
@@ -62,6 +68,84 @@ def search_resources(
     """向量检索知识库"""
     items = vector_adapter.search_similar_resources(query=q, job=job, top_k=top_k)
     return {"items": items}
+
+
+def _get_visible_owned_resource(resource_id: str, user_id: str, db: Session) -> Resource:
+    resource = db.query(Resource).join(
+        Assessment, Resource.assessment_id == Assessment.id
+    ).filter(
+        Resource.id == resource_id,
+        Assessment.user_id == user_id,
+        Resource.review_status.in_(["passed", "partial"]),
+        Resource.source_chunk_id.isnot(None),
+        Resource.source_text.isnot(None),
+        Resource.is_legacy == 0,
+    ).first()
+    if not resource or resource.display_status != "show":
+        raise HTTPException(status_code=404, detail="资源不存在")
+    if detect_source_leak(resource.source_text or "", resource.body or "").get("leaked"):
+        raise HTTPException(status_code=404, detail="资源正在复核，暂不可展示")
+    if detect_unrequested_resource_type(resource.body or "", resource.content_type or "").get("found"):
+        raise HTTPException(status_code=404, detail="资源类型不匹配，暂不可展示")
+    return resource
+
+
+@router.get("/bookmarks", response_model=list[BookmarkResponse])
+def list_bookmarks(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """返回当前学习者仍然可见的收藏资源。"""
+    return db.query(ResourceBookmark).join(
+        Resource, ResourceBookmark.resource_id == Resource.id
+    ).join(
+        Assessment, Resource.assessment_id == Assessment.id
+    ).filter(
+        ResourceBookmark.user_id == current_user.id,
+        Assessment.user_id == current_user.id,
+        Resource.review_status.in_(["passed", "partial"]),
+        Resource.source_chunk_id.isnot(None),
+        Resource.source_text.isnot(None),
+        Resource.is_legacy == 0,
+    ).order_by(ResourceBookmark.created_at.desc()).all()
+
+
+@router.post("/{resource_id}/bookmark", response_model=BookmarkResponse)
+def add_bookmark(
+    resource_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """收藏一条属于当前学习者且已经通过来源审核的资源。"""
+    _get_visible_owned_resource(resource_id, current_user.id, db)
+    bookmark = db.query(ResourceBookmark).filter(
+        ResourceBookmark.user_id == current_user.id,
+        ResourceBookmark.resource_id == resource_id,
+    ).first()
+    if bookmark:
+        return bookmark
+    bookmark = ResourceBookmark(user_id=current_user.id, resource_id=resource_id)
+    db.add(bookmark)
+    db.commit()
+    db.refresh(bookmark)
+    return bookmark
+
+
+@router.delete("/{resource_id}/bookmark")
+def remove_bookmark(
+    resource_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """取消收藏；重复调用保持幂等。"""
+    bookmark = db.query(ResourceBookmark).filter(
+        ResourceBookmark.user_id == current_user.id,
+        ResourceBookmark.resource_id == resource_id,
+    ).first()
+    if bookmark:
+        db.delete(bookmark)
+        db.commit()
+    return {"message": "已取消收藏"}
 
 
 @router.get("/list", response_model=list[ResourceResponse])
@@ -118,23 +202,4 @@ def get_resource(
     db: Session = Depends(get_db),
 ):
     """查询已审核通过的学习资源详情，不暴露被拦截或旧资源。"""
-    resource = db.query(Resource).join(
-        Assessment, Resource.assessment_id == Assessment.id
-    ).filter(
-        Resource.id == resource_id,
-        Assessment.user_id == current_user.id,
-        Resource.review_status.in_(["passed", "partial"]),
-        Resource.source_chunk_id.isnot(None),
-        Resource.source_text.isnot(None),
-        Resource.is_legacy == 0,
-    ).first()
-
-    if not resource or resource.display_status != "show":
-        raise HTTPException(status_code=404, detail="资源不存在")
-
-    if detect_source_leak(resource.source_text or "", resource.body or "").get("leaked"):
-        raise HTTPException(status_code=404, detail="资源正在复核，暂不可展示")
-    if detect_unrequested_resource_type(resource.body or "", resource.content_type or "").get("found"):
-        raise HTTPException(status_code=404, detail="资源类型不匹配，暂不可展示")
-
-    return resource
+    return _get_visible_owned_resource(resource_id, current_user.id, db)

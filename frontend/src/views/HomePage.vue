@@ -96,6 +96,7 @@ import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const store = useUserStore()
+const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const jobs = ref<JobInfo[]>([])
 const jobsLoading = ref(true)
 const jobsError = ref(false)
@@ -127,7 +128,7 @@ async function loadJobs() {
   try { jobs.value = await getJobList() } catch { jobsError.value = true } finally { jobsLoading.value = false }
 }
 function startAssessment(jobId?: string) {
-  if (!store.isLoggedIn) {
+  if (!store.isLoggedIn && !publicPreview) {
     router.push({ path: '/login', query: { next: jobId ? `/input?job=${jobId}` : '/input' } })
     return
   }

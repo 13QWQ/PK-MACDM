@@ -4,7 +4,7 @@
 
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +19,8 @@ from models.resource import Resource
 from models.job import Job
 from models.user import User
 from models.material import UserMaterial
+from models.learning_record import LearningRecord
+from models.resource_bookmark import ResourceBookmark
 from routers.auth import get_current_user
 from adapters import agent_adapter
 
@@ -26,12 +28,48 @@ router = APIRouter()
 
 
 # ===== 诊断进度（进程内，供前端轮询）=====
-_PROGRESS: dict[str, dict] = {}   # assessment_id -> {"label": str, "percent": int}
+_PROGRESS: dict[str, dict] = {}
 
 
-def _set_progress(assessment_id: str, label: str, percent: int) -> None:
-    """记录某次诊断的当前阶段进度"""
-    _PROGRESS[assessment_id] = {"label": label, "percent": int(percent)}
+def _progress_stage(percent: int) -> tuple[str, str]:
+    """Map a numeric progress value to the Agent currently responsible for the work."""
+    if percent >= 100:
+        return "complete", "协同调度器"
+    if percent >= 92:
+        return "review", "审核纠偏 Agent"
+    if percent >= 55:
+        return "resource", "资源生成 Agent"
+    if percent >= 50:
+        return "path", "路径规划 Agent"
+    if percent >= 10:
+        return "diagnosis", "能力诊断 Agent"
+    return "material", "资料解析 Agent"
+
+
+def _set_progress(
+    assessment_id: str,
+    label: str,
+    percent: int,
+    *,
+    status: str = "running",
+) -> None:
+    """Record current progress and retain a bounded event history for the live Agent panel."""
+    safe_percent = max(0, min(100, int(percent)))
+    stage, agent = _progress_stage(safe_percent)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    previous = _PROGRESS.get(assessment_id, {})
+    events = list(previous.get("events", []))
+    event = {
+        "stage": stage,
+        "agent": agent,
+        "label": label,
+        "percent": safe_percent,
+        "status": status,
+        "updated_at": now,
+    }
+    if not events or any(event[key] != events[-1].get(key) for key in ("stage", "label", "percent", "status")):
+        events.append(event)
+    _PROGRESS[assessment_id] = {**event, "events": events[-50:]}
 
 
 def _persist_calibration_records(db: Session, assessment_id: str, calibration: dict, records: list[dict]) -> None:
@@ -432,16 +470,22 @@ def submit_assessment(
         # ⑦ 持久化
         db.commit()
         db.refresh(assessment)
-        _set_progress(assessment.id, "完成", 100)
+        _set_progress(assessment.id, "诊断、资源生成与审核全部完成", 100, status="completed")
 
         return assessment
 
     except HTTPException:
+        _set_progress(assessment.id, "任务执行失败", _PROGRESS.get(assessment.id, {}).get("percent", 0), status="failed")
         raise
     except Exception as e:
         traceback.print_exc()
         db.rollback()
-        _PROGRESS.pop(assessment_id, None)
+        _set_progress(
+            assessment.id,
+            "任务执行失败，请稍后重试",
+            _PROGRESS.get(assessment.id, {}).get("percent", 0),
+            status="failed",
+        )
         raise HTTPException(status_code=500, detail=f"诊断失败: {e}")
 
 
@@ -579,7 +623,15 @@ def get_progress(
     if not assessment:
         raise HTTPException(status_code=404, detail="评估不存在")
 
-    return _PROGRESS.get(assessment_id, {"label": "正在解析学习情况", "percent": 0})
+    return _PROGRESS.get(assessment_id, {
+        "stage": "material",
+        "agent": "资料解析 Agent",
+        "label": "等待任务启动",
+        "percent": 0,
+        "status": "waiting",
+        "updated_at": None,
+        "events": [],
+    })
 
 
 @router.get("/{assessment_id}/agents")
@@ -597,7 +649,15 @@ def get_agent_trace(
         raise HTTPException(status_code=404, detail="评估不存在")
     return {
         "assessment_id": assessment.id,
-        "progress": _PROGRESS.get(assessment_id, {"label": "等待开始", "percent": 0}),
+        "progress": _PROGRESS.get(assessment_id, {
+            "stage": "material",
+            "agent": "资料解析 Agent",
+            "label": "等待开始",
+            "percent": 0,
+            "status": "waiting",
+            "updated_at": None,
+            "events": [],
+        }),
         "trace": assessment.agent_trace or {"agents": []},
     }
 
@@ -652,7 +712,31 @@ def delete_assessment(
     if not assessment:
         raise HTTPException(status_code=404, detail="评估不存在")
 
+    resource_ids = [row[0] for row in db.query(Resource.id).filter(
+        Resource.assessment_id == assessment.id
+    ).all()]
+    if resource_ids:
+        db.query(ResourceBookmark).filter(
+            ResourceBookmark.resource_id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+        db.query(LearningRecord).filter(
+            LearningRecord.resource_id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+        db.query(Resource).filter(
+            Resource.id.in_(resource_ids)
+        ).delete(synchronize_session=False)
+    db.query(LearningPath).filter(
+        LearningPath.assessment_id == assessment.id
+    ).delete(synchronize_session=False)
+    db.query(CalibrationRecord).filter(
+        CalibrationRecord.assessment_id == assessment.id
+    ).delete(synchronize_session=False)
+    db.query(UserMaterial).filter(
+        UserMaterial.assessment_id == assessment.id,
+        UserMaterial.user_id == current_user.id,
+    ).update({UserMaterial.assessment_id: None}, synchronize_session=False)
     db.delete(assessment)
     db.commit()
+    _PROGRESS.pop(assessment_id, None)
 
     return {"message": "已删除"}

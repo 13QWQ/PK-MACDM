@@ -11,6 +11,7 @@ from database import engine, Base, SessionLocal
 from routers import auth, assessment, session, resource, path, jobs, record, material
 from models.calibration import CalibrationRecord  # noqa: F401 - ensure table metadata is loaded
 from models.material import UserMaterial  # noqa: F401 - ensure table metadata is loaded
+from models.resource_bookmark import ResourceBookmark  # noqa: F401 - ensure table metadata is loaded
 
 # 自动创建数据库表
 Base.metadata.create_all(bind=engine)

@@ -127,14 +127,27 @@ export function getAssessment(id: string): Promise<AssessmentResponse> {
   return request.get(`/assessment/${id}`) as any
 }
 
-/** 查询诊断进度（前端轮询用） */
-export function getAssessmentProgress(id: string): Promise<{ label: string; percent: number }> {
+export interface AssessmentProgressEvent {
+  stage: 'material' | 'diagnosis' | 'path' | 'resource' | 'review' | 'complete'
+  agent: string
+  label: string
+  percent: number
+  status: 'waiting' | 'running' | 'completed' | 'failed'
+  updated_at: string | null
+}
+
+export interface AssessmentProgress extends AssessmentProgressEvent {
+  events: AssessmentProgressEvent[]
+}
+
+/** 查询诊断进度及阶段事件（前端实时面板轮询用） */
+export function getAssessmentProgress(id: string): Promise<AssessmentProgress> {
   return request.get(`/assessment/${id}/progress`) as any
 }
 
 export function getAssessmentAgents(id: string): Promise<{
   assessment_id: string
-  progress: { label: string; percent: number }
+  progress: AssessmentProgress
   trace: { agents?: AgentTraceEvent[]; retrieval_sources?: Array<Record<string, unknown>> }
 }> {
   return request.get(`/assessment/${id}/agents`) as any

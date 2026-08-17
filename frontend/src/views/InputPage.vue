@@ -72,6 +72,10 @@
           <section class="inspector-section progress-section">
             <div class="section-label"><DataAnalysis /> 审查进度</div>
             <div class="progress-layout"><div class="progress-ring" :style="{ '--p': `${displayProgress * 3.6}deg` }"><b>{{ displayProgress }}%</b></div><div class="progress-copy"><span>整体进度</span><div class="track"><i :style="{ width: `${displayProgress}%` }"></i></div><small>{{ submitting ? liveProgress.label : reviewSufficient ? '资料可进入能力诊断' : '提交资料后开始' }}</small></div></div>
+            <div v-if="submitting" class="live-agent"><span class="live-agent-dot"></span><div><small>当前执行</small><b>{{ liveProgress.agent }}</b></div><em>{{ liveProgress.status === 'failed' ? '执行失败' : '实时同步' }}</em></div>
+            <ol v-if="progressEvents.length" class="progress-events" aria-label="Agent 执行记录">
+              <li v-for="event in progressEvents" :key="`${event.updated_at}-${event.percent}-${event.label}`" :class="event.status"><i></i><div><b>{{ event.agent }}</b><span>{{ event.label }}</span></div><strong>{{ event.percent }}%</strong></li>
+            </ol>
           </section>
 
           <section class="inspector-section evidence-section">
@@ -113,7 +117,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getJobList, type JobInfo } from '@/api/jobs'
-import { createAssessment, getAssessmentProgress, reviewInput, submitAssessment } from '@/api/assessment'
+import { createAssessment, getAssessmentProgress, reviewInput, submitAssessment, type AssessmentProgress } from '@/api/assessment'
 import { createSession } from '@/api/session'
 import { createTextMaterial, deleteMaterial, getMaterialList, uploadMaterial, type MaterialStatus, type UserMaterial } from '@/api/material'
 import { useUserStore } from '@/stores/user'
@@ -122,22 +126,27 @@ const router = useRouter(); const route = useRoute(); const store = useUserStore
 const jobs = ref<JobInfo[]>([]); const jobLoading = ref(true); const jobError = ref(false); const selectedJobId = ref('')
 const userInput = ref(''); const reviewHint = ref(''); const reviewMissing = ref<string[]>([]); const reviewSufficient = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null); const materials = ref<UserMaterial[]>([]); const materialsLoading = ref(false); const uploading = ref(false); const uploadError = ref('')
-const submitting = ref(false); const assessmentId = ref(''); const liveProgress = ref({ label: '等待开始', percent: 0 }); let progressTimer: number | null = null
+const submitting = ref(false); const assessmentId = ref('')
+const liveProgress = ref<AssessmentProgress>({ stage: 'material', agent: '资料解析 Agent', label: '等待开始', percent: 0, status: 'waiting', updated_at: null, events: [] })
+let progressTimer: number | null = null; let progressPolling = false
 const dragging = ref(false); const composerFocused = ref(false)
 const selectedJob = computed(() => jobs.value.find(job => job.id === selectedJobId.value) || null)
 const parsedMaterialCount = computed(() => materials.value.filter(item => item.status === 'parsed').length)
 const evidencePercent = computed(() => Math.min(100, (userInput.value.trim().length >= 20 ? 32 : 0) + parsedMaterialCount.value * 23 + (materials.value.length ? 10 : 0)))
 const evidenceLabel = computed(() => evidencePercent.value >= 70 ? '较完整' : evidencePercent.value >= 40 ? '可用' : '待补充')
 const displayProgress = computed(() => submitting.value ? Math.max(4, liveProgress.value.percent) : reviewSufficient.value ? Math.max(62, evidencePercent.value) : evidencePercent.value)
+const progressEvents = computed(() => liveProgress.value.events.slice(-4).reverse())
 const pipeline = computed(() => {
   const p = liveProgress.value.percent
   const active = submitting.value
-  const statusAt = (start: number, done: number) => !active ? (reviewSufficient.value ? 'waiting' : 'idle') : p >= done ? 'completed' : p >= start ? 'running' : 'waiting'
+  const failedStage = liveProgress.value.status === 'failed' ? liveProgress.value.stage : ''
+  const statusAt = (stage: string, start: number, done: number) => !active ? (reviewSufficient.value ? 'waiting' : 'idle') : failedStage === stage ? 'failed' : p >= done ? 'completed' : p >= start ? 'running' : 'waiting'
   return [
-    { icon: DocumentCopy, name: '资料解析 Agent', detail: active ? '解析学习描述与已上传资料' : '提取资料文本与结构', status: statusAt(5, 18) },
-    { icon: Search, name: '能力证据 Agent', detail: active ? '抽取可追溯能力证据' : '建立 evidence_id 证据链', status: statusAt(18, 45) },
-    { icon: Link, name: '职业能力 Agent', detail: active ? '对照岗位能力模型' : '识别已达标与待补强项', status: statusAt(45, 72) },
-    { icon: CircleCheck, name: '审核纠偏 Agent', detail: active ? '校验生成与来源依据' : '审核知识库来源与结果', status: statusAt(72, 100) },
+    { icon: DocumentCopy, name: '资料解析 Agent', detail: '解析描述与上传资料', status: statusAt('material', 5, 10) },
+    { icon: Search, name: '能力诊断 Agent', detail: '抽取证据并对照能力模型', status: statusAt('diagnosis', 10, 50) },
+    { icon: Link, name: '路径规划 Agent', detail: '依据能力缺口规划路径', status: statusAt('path', 50, 55) },
+    { icon: Cpu, name: '资源生成 Agent', detail: '检索知识库并生成资源', status: statusAt('resource', 55, 92) },
+    { icon: CircleCheck, name: '审核纠偏 Agent', detail: '校验来源与生成内容', status: statusAt('review', 92, 100) },
   ]
 })
 
@@ -152,8 +161,8 @@ async function uploadSelectedFile(file: File) { if (!selectedJobId.value) return
 async function handleFileChange(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (file) await uploadSelectedFile(file); if (fileInput.value) fileInput.value.value = '' }
 async function handleDrop(event: DragEvent) { dragging.value = false; const file = event.dataTransfer?.files?.[0]; if (!file || submitting.value) return; await uploadSelectedFile(file) }
 async function removeMaterial(id: string) { try { await deleteMaterial(id); materials.value = materials.value.filter(item => item.id !== id) } catch { ElMessage.error('删除资料失败') } }
-async function pollProgress() { if (!assessmentId.value) return; try { liveProgress.value = await getAssessmentProgress(assessmentId.value) } catch { /* keep the latest verified progress */ } }
-function startPolling() { stopPolling(); pollProgress(); progressTimer = window.setInterval(pollProgress, 2200) }
+async function pollProgress() { if (!assessmentId.value || progressPolling) return; progressPolling = true; try { liveProgress.value = await getAssessmentProgress(assessmentId.value) } catch { /* keep the latest verified progress */ } finally { progressPolling = false } }
+function startPolling() { stopPolling(); pollProgress(); progressTimer = window.setInterval(pollProgress, 900) }
 function stopPolling() { if (progressTimer !== null) { window.clearInterval(progressTimer); progressTimer = null } }
 async function startReview() {
   if (!store.isLoggedIn) { router.push({ path: '/login', query: { next: '/input' } }); return }
@@ -163,7 +172,7 @@ async function startReview() {
     const review = await reviewInput({ job_id: selectedJobId.value, user_input: userInput.value.trim() })
     reviewHint.value = review.hint; reviewMissing.value = review.missing || []; reviewSufficient.value = review.sufficient
     if (!review.sufficient) { ElMessage.warning('请按提示补充资料后再次审查'); return }
-    submitting.value = true; liveProgress.value = { label: '正在创建审查任务', percent: 2 }
+    submitting.value = true; liveProgress.value = { stage: 'material', agent: '资料解析 Agent', label: '正在创建审查任务', percent: 2, status: 'running', updated_at: null, events: [] }
     const [assessment, session] = await Promise.all([createAssessment({ job_id: selectedJobId.value }), createSession({ job_id: selectedJobId.value })])
     assessmentId.value = assessment.id; store.setCurrentSession(session.id); startPolling()
     const textEvidence = userInput.value.trim()
@@ -171,7 +180,7 @@ async function startReview() {
       try { const textMaterial = await createTextMaterial({ content: textEvidence, title: '学习经历补充', job_id: selectedJobId.value }); materials.value.unshift(textMaterial) } catch { /* diagnosis still carries user_input */ }
     }
     await submitAssessment(assessment.id, { user_input: textEvidence, material_ids: materials.value.map(item => item.id) })
-    stopPolling(); liveProgress.value = { label: '审查完成', percent: 100 }; await router.push(`/diagnosis/${assessment.id}`)
+    await pollProgress(); stopPolling(); liveProgress.value = { ...liveProgress.value, stage: 'complete', agent: '协同调度器', label: '审查完成', percent: 100, status: 'completed' }; await router.push(`/diagnosis/${assessment.id}`)
   } catch (error: any) { const message = error?.response?.data?.detail || '审查任务启动失败，请稍后重试'; ElMessage.error(message); reviewHint.value = message } finally { submitting.value = false; stopPolling() }
 }
 watch(selectedJobId, () => { if (selectedJobId.value) loadMaterials() })
@@ -275,6 +284,23 @@ onMounted(loadJobs); onBeforeUnmount(stopPolling)
 .track, .evidence-meter { height: 6px; margin: 8px 0; overflow: hidden; border-radius: 99px; background: rgba(98,148,118,.12); }
 .track i, .evidence-meter i { display: block; height: 100%; border-radius: inherit; background: var(--gradient-progress); transition: width .45s ease; }
 .progress-copy small { color: var(--ink-faint); font-size: 9px; }
+.live-agent { margin-top: 13px; padding: 9px 10px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(31,158,91,.13); border-radius: 11px; background: linear-gradient(120deg,rgba(222,250,222,.5),rgba(255,255,255,.42)); }
+.live-agent-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #20b66a; box-shadow: 0 0 0 5px rgba(32,182,106,.1); animation: breathe 1.6s ease-in-out infinite; }
+.live-agent div { min-width: 0; flex: 1; }
+.live-agent small, .live-agent b { display: block; }
+.live-agent small { color: var(--ink-faint); font-size: 8px; }
+.live-agent b { margin-top: 2px; overflow: hidden; color: var(--green-deep); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.live-agent em { color: var(--green-deep); font-size: 8px; font-style: normal; }
+.progress-events { margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; list-style: none; }
+.progress-events li { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 7px; align-items: center; color: var(--ink-faint); }
+.progress-events li > i { width: 6px; height: 6px; border-radius: 50%; background: rgba(30,118,70,.24); }
+.progress-events li.running > i { background: #20b66a; box-shadow: 0 0 0 3px rgba(32,182,106,.1); }
+.progress-events li.completed > i { background: #079455; }
+.progress-events li.failed > i { background: #d94b4b; }
+.progress-events li b, .progress-events li span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-events li b { color: var(--ink-soft); font-size: 8px; }
+.progress-events li span { margin-top: 1px; font-size: 8px; }
+.progress-events li strong { color: var(--green-deep); font-size: 8px; }
 .file-empty { padding: 19px 0 2px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--ink-faint); font-size: 10px; }
 .file-empty svg { width: 14px; }
 .file-list { margin-top: 11px; display: flex; flex-direction: column; gap: 9px; }
@@ -295,12 +321,13 @@ onMounted(loadJobs); onBeforeUnmount(stopPolling)
 .pipeline-title { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
 .pipeline-title h2 { margin: 5px 0 0; font-size: 17px; }
 .pipeline-caption { color: var(--ink-faint); font-size: 10px; }
-.pipeline-track { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 20px; }
-.agent-node { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; align-items: center; }
+.pipeline-track { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.agent-node { min-width: 0; flex: 1 1 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; align-items: center; }
 .agent-symbol { width: 40px; height: 40px; display: grid; place-items: center; position: relative; border-radius: 50%; color: var(--ink-faint); background: rgba(255,255,255,.58); border: 1px solid rgba(15,112,62,.1); }
 .agent-symbol svg { width: 17px; }
 .agent-node.running .agent-symbol { color: var(--green-deep); background: linear-gradient(135deg, #f5fff7, #bdf4cf); box-shadow: 0 0 0 6px rgba(222,250,222,.44), 0 0 22px rgba(34,181,107,.18); animation: breathe 2s ease-in-out infinite; }
 .agent-node.completed .agent-symbol { color: #fff; background: var(--gradient-primary); }
+.agent-node.failed .agent-symbol { color: #fff; background: linear-gradient(135deg,#e96b6b,#c83e3e); box-shadow: 0 0 0 5px rgba(217,75,75,.1); }
 .agent-node b, .agent-node small, .agent-node em { display: block; }
 .agent-node b { font-size: 11px; }
 .agent-node small { margin-top: 3px; color: var(--ink-soft); font-size: 9px; line-height: 1.4; }
@@ -315,6 +342,6 @@ onMounted(loadJobs); onBeforeUnmount(stopPolling)
 .error-state { padding: 30px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 14px; }
 .error-state span { color: var(--ink-soft); font-size: 13px; }
 .error-state button { border: 0; border-radius: 10px; padding: 9px 12px; margin-left: auto; background: var(--gradient-primary); color: #fff; cursor: pointer; }
-@media (max-width: 1060px) { .workspace-grid { grid-template-columns: 1fr; } .review-inspector { min-height: auto; display: grid; grid-template-columns: repeat(2,1fr); gap: 0 22px; } .inspector-head { grid-column: 1 / 3; } .inspector-section:nth-of-type(1), .inspector-section:nth-of-type(2) { border-top: 1px solid var(--line); } .pipeline-track { grid-template-columns: 1fr 1fr; gap: 18px; } .pipeline-link { display: none; } }
+@media (max-width: 1060px) { .workspace-grid { grid-template-columns: 1fr; } .review-inspector { min-height: auto; display: grid; grid-template-columns: repeat(2,1fr); gap: 0 22px; } .inspector-head { grid-column: 1 / 3; } .inspector-section:nth-of-type(1), .inspector-section:nth-of-type(2) { border-top: 1px solid var(--line); } .pipeline-track { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .pipeline-link { display: none; } }
 @media (max-width: 680px) { .review-heading { display: block; } .heading-action { margin-top: 15px; } .workspace-top { align-items: flex-start; flex-direction: column; } .job-picker select { max-width: 230px; } .review-workspace { padding: 14px; min-height: 640px; } .conversation { min-height: 330px; } .workspace-empty { inset-top: 100px; } .empty-actions { flex-wrap: wrap; justify-content: center; } .composer-tools { align-items: flex-end; } .submit-group > span { display: none; } .tool-group button { padding-inline: 7px; } .review-inspector { display: block; padding: 18px; } .inspector-head { display: flex; } .pipeline { padding: 16px; } .pipeline-title { display: block; } .pipeline-caption { display: block; margin-top: 8px; } .pipeline-track { grid-template-columns: 1fr; } .message { max-width: 96%; } .error-state { display: block; } .error-state > * { display: block; margin: 8px 0; } .error-state button { margin-left: 0; } }
 </style>

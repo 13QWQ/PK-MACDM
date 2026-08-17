@@ -10,7 +10,7 @@
         <router-link to="/">首页</router-link>
         <router-link to="/input">资料审查</router-link>
         <router-link :to="diagnosisLink">能力诊断</router-link>
-        <router-link to="/library">资料库</router-link>
+        <router-link :to="libraryLink">资料库</router-link>
       </div>
 
       <div class="nav-actions">
@@ -21,10 +21,11 @@
           </button>
           <button class="nav-text-action" type="button" @click="store.logout()">退出</button>
         </template>
-        <template v-else>
+        <template v-else-if="!publicPreview">
           <button class="glass-button quiet" type="button" @click="$router.push('/login')">登录</button>
         </template>
-        <button class="glass-button primary start-button" type="button" @click="$router.push(store.isLoggedIn ? '/input' : '/login?next=/input')">
+        <span v-else class="preview-chip">公开预览</span>
+        <button class="glass-button primary start-button" type="button" @click="openAssessment">
           开始测评 <ArrowRight />
         </button>
       </div>
@@ -34,15 +35,27 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowRight, Connection } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 const store = useUserStore()
+const router = useRouter()
+const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const isScrolled = ref(false)
 const diagnosisLink = computed(() => {
+  if (publicPreview) return '/diagnosis?demo=1'
   const id = store.userInfo?.latest_assessment_id
   return id ? `/diagnosis/${id}` : '/diagnosis'
 })
+const libraryLink = computed(() => publicPreview ? '/library?demo=1' : '/library')
+const openAssessment = () => {
+  if (publicPreview || store.isLoggedIn) {
+    router.push('/input')
+    return
+  }
+  router.push('/login?next=/input')
+}
 const syncScroll = () => { isScrolled.value = window.scrollY > 12 }
 onMounted(() => window.addEventListener('scroll', syncScroll, { passive: true }))
 onBeforeUnmount(() => window.removeEventListener('scroll', syncScroll))
@@ -161,6 +174,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', syncScroll))
 .glass-button svg { width: 16px; }
 .start-button { min-width: 122px; }
 .profile-chip, .nav-text-action { border: 0; background: transparent; cursor: pointer; color: var(--ink-soft); font-size: 13px; font-weight: 650; }
+.preview-chip { padding: 7px 10px; border: 1px solid rgba(20,156,82,.12); border-radius: 99px; background: rgba(222,250,222,.52); color: var(--green-deep); font-size: 11px; font-weight: 700; }
 .profile-chip { display: inline-flex; gap: 8px; align-items: center; }
 .profile-dot { height: 29px; width: 29px; display: grid; place-items: center; border-radius: 50%; background: rgba(42,205,127,.17); color: var(--green-deep); font-size: 12px; }
 @media (max-width: 850px) {

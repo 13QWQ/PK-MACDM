@@ -83,7 +83,7 @@
                 <p>{{ featuredResource.title }}。依据本次能力诊断与审核通过的知识片段，为你组织下一阶段的学习顺序。</p>
                 <div class="package-tags"><span>{{ featuredResource.content_type }}</span><span v-if="featuredResource.difficulty">难度 {{ featuredResource.difficulty }}/5</span><span><CircleCheckFilled />来源已审核</span></div>
                 <div class="package-progress"><div><span>学习包完整度</span><b>{{ packageProgress }}%</b></div><div class="progress-track"><i :style="{ width: `${packageProgress}%` }"></i></div></div>
-                <div class="package-actions"><button class="primary-gradient-button" type="button" @click="openResource(featuredResource)">继续学习 <ArrowRight /></button><span>已编排 {{ filteredResources.length }} 项训练资源</span></div>
+                <div class="package-actions"><button class="primary-gradient-button" type="button" @click="openResource(featuredResource, true)">继续学习 <ArrowRight /></button><span>已编排 {{ filteredResources.length }} 项训练资源</span></div>
               </template>
               <template v-else>
                 <h2>{{ assessmentId ? '学习包正在等待审核通过的内容' : '完成诊断，生成你的 AI 学习包' }}</h2>
@@ -106,10 +106,10 @@
             <div class="resource-heading"><div><span>CURATED FOR YOU</span><h2>精选资源</h2></div><em>{{ selectedLabel }}</em></div>
             <div v-if="hasResources && filteredResources.length" class="resource-grid" :class="{ 'list-view': viewMode === 'list' }">
               <article v-for="(resource, index) in filteredResources" :key="resource.id" class="resource-card glass-surface" :style="{ '--card-delay': `${Math.min(index, 8) * 35}ms` }">
-                <div class="resource-card-top"><span class="resource-icon" :class="resourceTone(resource.content_type)"><component :is="resourceIcon(resource.content_type)" /></span><span class="resource-type">{{ resource.content_type }}</span><button type="button" class="bookmark" title="收藏资源"><Star /></button></div>
+                <div class="resource-card-top"><span class="resource-icon" :class="resourceTone(resource.content_type)"><component :is="resourceIcon(resource.content_type)" /></span><span class="resource-type">{{ resource.content_type }}</span><button type="button" class="bookmark" :class="{ active: bookmarkedIds.has(resource.id) }" :title="bookmarkedIds.has(resource.id) ? '取消收藏' : '收藏资源'" :aria-pressed="bookmarkedIds.has(resource.id)" @click.stop="toggleBookmark(resource)"><Star /></button></div>
                 <div class="resource-card-copy"><h3>{{ resource.title }}</h3><p>{{ preview(resource.body) }}</p></div>
                 <div class="resource-meta"><span>{{ resource.knowledge_point }}</span><span><CircleCheck />审核{{ reviewText(resource.review_status) }}</span></div>
-                <div class="resource-footer"><div class="mini-progress"><i :style="{ width: `${resourceProgress(index)}%` }"></i></div><button type="button" @click="openResource(resource)">查看资料 <ArrowRight /></button></div>
+                <div class="resource-footer"><div class="mini-progress"><i :style="{ width: `${resourceProgress(resource, index)}%` }"></i></div><button type="button" @click="openResource(resource)">查看资料 <ArrowRight /></button></div>
               </article>
             </div>
             <div v-else-if="hasResources" class="resource-empty glass-panel"><Search /><b>没有符合当前筛选条件的资源</b><p>可重置筛选，或返回资料审查补充能力证据。</p><button type="button" @click="resetFilters"><RefreshLeft />重置筛选</button></div>
@@ -150,8 +150,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { ArrowRight, CircleCheck, CircleCheckFilled, Clock, Collection, DataAnalysis, DataLine, Document, EditPen, Files, Grid, Guide, Loading, Lock, MagicStick, Menu, Monitor, Refresh, RefreshLeft, Search, Star, TrendCharts, Warning } from '@element-plus/icons-vue'
-import { getResourceList, type ResourceInfo } from '@/api/resource'
+import { bookmarkResource, getResourceBookmarks, getResourceList, unbookmarkResource, type ResourceInfo } from '@/api/resource'
+import { getLearningRecords, type LearningRecordInfo } from '@/api/record'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
@@ -171,6 +173,8 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const selectedPreview = ref<ResourceInfo | null>(null)
 const previewVisible = ref(false)
 const spotlight = ref({ x: 74, y: 42, active: false })
+const bookmarkedIds = ref<Set<string>>(new Set())
+const learningRecords = ref<Record<string, LearningRecordInfo>>({})
 const demoMode = computed(() => publicPreview && route.query.demo === '1')
 
 const demoResources: ResourceInfo[] = [
@@ -217,9 +221,30 @@ function preview(body: string) { return body.replace(/[#*`>]/g, '').replace(/\s+
 function resourceIcon(type: string) { if (type.includes('讲义')) return Document; if (type.includes('实操') || type.includes('指南')) return Monitor; if (type.includes('错题') || type.includes('测试')) return EditPen; if (type.includes('项目')) return Files; if (type.includes('路径')) return Guide; return Collection }
 function resourceTone(type: string) { if (type.includes('错题') || type.includes('测试')) return 'violet'; if (type.includes('项目')) return 'blue'; if (type.includes('实操') || type.includes('指南')) return 'green'; if (type.includes('路径')) return 'mint'; return 'sky' }
 function reviewText(status: string | null) { return status === 'passed' ? '通过' : status === 'partial' ? '部分匹配' : '复核中' }
-function resourceProgress(index: number) { return [78, 61, 42, 34, 83, 56][index % 6] }
+function resourceProgress(resource: ResourceInfo, index: number) {
+  if (demoMode.value) return [78, 61, 42, 34, 83, 56][index % 6]
+  const record = learningRecords.value[resource.id]
+  if (!record) return 0
+  return record.status === 'completed' ? 100 : record.status === 'in_progress' ? 50 : 0
+}
 function stepState(index: number) { if (hasResources.value) return 'done'; if (assessmentId.value) return index === 0 ? 'done' : index === 1 ? 'running' : 'waiting'; return 'waiting' }
-function openResource(resource: ResourceInfo) { if (resource.id.startsWith('demo-')) { selectedPreview.value = resource; previewVisible.value = true; return } router.push(`/resource/${resource.id}`) }
+function openResource(resource: ResourceInfo, start = false) { if (resource.id.startsWith('demo-')) { selectedPreview.value = resource; previewVisible.value = true; return } router.push({ path: `/resource/${resource.id}`, query: start ? { start: '1' } : undefined }) }
+async function toggleBookmark(resource: ResourceInfo) {
+  const next = new Set(bookmarkedIds.value)
+  const active = next.has(resource.id)
+  if (demoMode.value) {
+    active ? next.delete(resource.id) : next.add(resource.id)
+    bookmarkedIds.value = next
+    return
+  }
+  try {
+    if (active) { await unbookmarkResource(resource.id); next.delete(resource.id); ElMessage.success('已取消收藏') }
+    else { await bookmarkResource(resource.id); next.add(resource.id); ElMessage.success('已收藏') }
+    bookmarkedIds.value = next
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '收藏状态更新失败')
+  }
+}
 function openDiagnosis() { router.push(demoMode.value ? '/diagnosis?demo=1' : `/diagnosis/${assessmentId.value}`) }
 function resetFilters() { keyword.value = ''; activeTab.value = 'all'; selectedTypes.value = []; selectedPoints.value = [] }
 function updateSpotlight(event: PointerEvent) { const target = event.currentTarget as HTMLElement; const rect = target.getBoundingClientRect(); spotlight.value = { x: (event.clientX - rect.left) / rect.width * 100, y: (event.clientY - rect.top) / rect.height * 100, active: true } }
@@ -228,13 +253,20 @@ function handleShortcut(event: KeyboardEvent) { if ((event.metaKey || event.ctrl
 async function loadLibrary() {
   libraryLoading.value = true; libraryError.value = ''; resources.value = []; resetFilters()
   try {
-    if (demoMode.value) { assessmentId.value = 'demo-assessment'; resources.value = demoResources; return }
+    if (demoMode.value) { assessmentId.value = 'demo-assessment'; resources.value = demoResources; learningRecords.value = {}; return }
     if (!publicPreview && !store.userInfo) await store.fetchUserInfo()
     const byQuery = typeof route.query.assessment === 'string' ? route.query.assessment : ''
     const byParam = typeof route.params.assessmentId === 'string' ? route.params.assessmentId : ''
     assessmentId.value = byQuery || byParam || store.userInfo?.latest_assessment_id || ''
     if (!assessmentId.value) return
-    resources.value = await getResourceList({ assessment_id: assessmentId.value })
+    const [resourceItems, bookmarks, records] = await Promise.all([
+      getResourceList({ assessment_id: assessmentId.value }),
+      getResourceBookmarks(),
+      getLearningRecords(assessmentId.value),
+    ])
+    resources.value = resourceItems
+    bookmarkedIds.value = new Set(bookmarks.map(item => item.resource_id))
+    learningRecords.value = Object.fromEntries(records.map(item => [item.resource_id, item]))
   } catch (error: any) { libraryError.value = error?.response?.data?.detail || '资料库加载失败'; resources.value = [] }
   finally { libraryLoading.value = false }
 }
@@ -404,4 +436,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
   .spatial-resource-object { min-height: 205px; }
   .spatial-resource-object img { width: 100%; height: 100%; }
 }
+.bookmark.active {
+  color: #079455;
+  background: rgba(222, 250, 222, .74);
+  border-radius: 9px;
+}
+.bookmark.active svg { fill: currentColor; }
 </style>

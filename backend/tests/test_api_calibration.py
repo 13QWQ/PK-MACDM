@@ -78,6 +78,15 @@ class ApiCalibrationTests(unittest.TestCase):
         self.assertEqual(body["calibration_status"], "passed")
         self.assertEqual(body["calibration_summary"]["accuracy"], 1.0)
 
+        progress = self.client.get(f"/api/assessment/{assessment_id}/progress")
+        self.assertEqual(progress.status_code, 200)
+        progress_body = progress.json()
+        self.assertEqual(progress_body["percent"], 100)
+        self.assertEqual(progress_body["status"], "completed")
+        self.assertEqual(progress_body["stage"], "complete")
+        stages = {event["stage"] for event in progress_body["events"]}
+        self.assertTrue({"material", "diagnosis", "path", "resource", "review", "complete"}.issubset(stages))
+
         calibration = self.client.get(f"/api/assessment/{assessment_id}/calibration")
         self.assertEqual(calibration.status_code, 200)
         self.assertEqual(calibration.json()["summary"]["evaluated_count"], 1)
