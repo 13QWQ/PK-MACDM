@@ -4,9 +4,12 @@ Each Agent has a distinct identity (system prompt) and calls the DeepSeek API
 for semantic reasoning.  When DEEPSEEK_API_KEY is not set, agents fall back to
 the deterministic rule-based logic.
 
-Agent pipeline (serial):
+Agent pipeline (serial, seven stages):
   InputParsingAgent → RAGEvidenceAgent → CapabilityScoringAgent → CalibrationAgent
-  → guardrail (anti-hallucination check)
+  → GroundTruthCalibrationAgent → ResourceAgent → PathAgent
+
+The post-generation guardrail is a review service, not an eighth Agent. It checks
+source binding, source leakage and hallucination before resources become visible.
 
 Public contracts:
   * diagnose(user_id, target_job, user_input, gold_labels=None)
@@ -27,6 +30,7 @@ from uuid import uuid4
 from .guardrail import check_hallucination, detect_unrequested_resource_type
 from .llm_client import chat, chat_json
 from .calibration import GroundTruthCalibrationAgent, build_requirement_scores
+from .context_manager import ContextManager
 
 def _check_llm() -> bool:
     try:
@@ -751,9 +755,15 @@ class AgentRuntime:
         role = self._role(target_job)
         self._current_job.set(role)
         trace_id = f"trace_{uuid4().hex[:12]}"
+        context_manager = ContextManager(trace_id=trace_id)
         events: list[AgentEvent] = []
         parser = InputParsingAgent()
         profile = parser.run(role, user_input)
+        context_manager.record(
+            "parse_input",
+            {"user_id": user_id, "target_job": role, "user_input": user_input, "career_skills": [skill for skill, _ in ROLE_PROFILES[role]["skills"]]},
+            {"matched_skills": profile.matched_skills, "negative_skills": sorted(profile.negative_skills), "action_evidence_count": profile.action_evidence_count},
+        )
         events.append(AgentEvent(
             name=parser.name,
             status="completed",
@@ -762,10 +772,27 @@ class AgentRuntime:
             confidence=0.84 if len(profile.text) >= 30 else 0.58,
         ))
         RAGEvidenceAgent(self.retriever).run(role, profile, events)
+        context_manager.record(
+            "retrieve_knowledge",
+            {"target_job": role, "matched_skills": profile.matched_skills, "negative_skills": sorted(profile.negative_skills), "retrieval_hits": profile.retrieval_hits},
+            {"knowledge_catalog": profile.knowledge_catalog[:80], "hit_count": len(profile.retrieval_hits)},
+            source_chunk_ids=[str(hit.get("source_chunk_id")) for hit in profile.retrieval_hits],
+        )
         self._last_catalog.set(profile.knowledge_catalog)  # 存储供 PathAgent 使用
         self._last_catalog_map.set(profile.knowledge_catalog_map)
         diagnosis = CapabilityScoringAgent().run(role, profile, events)
+        context_manager.record(
+            "diagnose_capability",
+            {"target_job": role, "career_model_version": "role-profile.v1", "matched_skills": profile.matched_skills, "negative_skills": sorted(profile.negative_skills), "action_evidence_count": profile.action_evidence_count, "knowledge_catalog": profile.knowledge_catalog[:80]},
+            {"overall_mastery": diagnosis.get("overall_mastery"), "ability_vector": diagnosis.get("ability_vector"), "knowledge_gaps": diagnosis.get("knowledge_gaps", []), "requirement_scores": diagnosis.get("requirement_scores", [])},
+            evidence_ids=[str(item.get("evidence_id")) for item in diagnosis.get("requirement_scores", []) if isinstance(item, dict) for _ in [0] if item.get("evidence_id")],
+        )
         diagnosis = CalibrationAgent().run(diagnosis, profile, events)
+        context_manager.record(
+            "calibrate_result",
+            {"diagnosis": {"overall_mastery": diagnosis.get("overall_mastery"), "ability_vector": diagnosis.get("ability_vector"), "knowledge_gaps": diagnosis.get("knowledge_gaps", [])}, "user_input_length": len(profile.text)},
+            {"validation": "approved", "confidence": diagnosis.get("confidence")},
+        )
 
         # ── 层2：真实结果校准 ──
         # 没有标准结果时只返回 unvalidated，不把模型自报置信度冒充准确率。
@@ -799,6 +826,12 @@ class AgentRuntime:
             confidence=1.0 if ground_truth["summary"]["evaluated_count"] else 0.3,
             review_result=ground_truth["summary"]["status"],
         ))
+        context_manager.record(
+            "calibrate_against_ground_truth",
+            {"requirement_scores": diagnosis.get("requirement_scores", []), "gold_labels": gold_labels or [], "apply_corrections": apply_corrections},
+            {"summary": ground_truth["summary"], "record_count": len(ground_truth["records"])},
+            evidence_ids=[str(item.get("evidence_id")) for item in diagnosis.get("requirement_scores", []) if isinstance(item, dict) and item.get("evidence_id")],
+        )
 
         # ── 层1：知识缺口校验（防幻觉）——过滤掉岗位能力模型/知识库无依据的缺口 ──
         kept_gaps, gap_validation = _validate_gaps(
@@ -815,6 +848,7 @@ class AgentRuntime:
             diagnosis["hallucination_warning"] = guard_res.get("reason", "防幻觉校验未通过")
 
         self.last_trace = self._trace(trace_id, user_id, role, events, profile, diagnosis, None)
+        self.last_trace["context_ledger"] = context_manager.as_dicts()
         return diagnosis
 
     def calibrate_existing(
@@ -834,6 +868,7 @@ class AgentRuntime:
         """
         role = self._role(target_job)
         profile = InputParsingAgent()._run_rules(role, user_input)
+        context_manager = ContextManager()
         events: list[AgentEvent] = []
         result = GroundTruthCalibrationAgent().run(
             target_job=role,
@@ -852,6 +887,11 @@ class AgentRuntime:
             confidence=1.0 if result["summary"]["evaluated_count"] else 0.3,
             review_result=result["summary"]["status"],
         ))
+        context_manager.record(
+            "calibrate_against_ground_truth",
+            {"requirement_scores": diagnosis.get("requirement_scores", []), "gold_labels": gold_labels, "apply_corrections": apply_corrections},
+            {"summary": result["summary"], "record_count": len(result["records"])},
+        )
         self.last_trace = {
             "trace_id": f"trace_{uuid4().hex[:12]}",
             "user_id": user_id,
@@ -859,6 +899,7 @@ class AgentRuntime:
             "agents": [event.__dict__ for event in events],
             "calibration": result["summary"],
             "review": {"approved": result["summary"]["status"] == "passed", "errors": []},
+            "context_ledger": context_manager.as_dicts(),
         }
         return result
 
@@ -868,6 +909,7 @@ class AgentRuntime:
             role = "后端开发工程师"
         events: list[AgentEvent] = []
         resource, hits = ResourceAgent(self.retriever).run(knowledge_point, user_level, resource_type, role)
+        context_manager = ContextManager()
         source = next(
             (
                 hit for hit in hits
@@ -888,6 +930,12 @@ class AgentRuntime:
             confidence=0.86 if source else 0.15,
             review_result="pending" if source else "blocked",
         ))
+        context_manager.record(
+            "generate_resource",
+            {"target_job": role, "knowledge_point": knowledge_point, "user_level": user_level, "resource_type": resource_type, "approved_sources": hits},
+            {"content_type": resource.get("content_type"), "title": resource.get("title"), "generation_status": resource.get("generation_status", "pending")},
+            source_chunk_ids=[str(source.get("source_chunk_id"))] if source else [],
+        )
         self.last_trace = {
             "trace_id": f"trace_{uuid4().hex[:12]}",
             "target_job": role,
@@ -897,6 +945,7 @@ class AgentRuntime:
                 "approved": bool(source),
                 "errors": [] if source else ["知识库无可追溯来源"],
             },
+            "context_ledger": context_manager.as_dicts(),
         }
         if source:
             resource["source_chunk_id"] = str(source["source_chunk_id"])
@@ -917,12 +966,19 @@ class AgentRuntime:
         events: list[AgentEvent] = []
         knowledge_catalog = list(self._last_catalog.get())
         knowledge_catalog_map = dict(self._last_catalog_map.get())
+        context_manager = ContextManager()
         steps = PathAgent().run(user_id, role, current_ability, knowledge_catalog, knowledge_catalog_map, events)
+        context_manager.record(
+            "plan_path",
+            {"user_id": user_id, "target_job": role, "ability_vector": current_ability, "knowledge_catalog": knowledge_catalog},
+            {"step_count": len(steps), "steps": steps},
+        )
         self.last_trace = {
             "trace_id": f"trace_{uuid4().hex[:12]}",
             "target_job": role,
             "agents": [event.__dict__ for event in events],
             "review": {"approved": True, "errors": []},
+            "context_ledger": context_manager.as_dicts(),
         }
         return steps
 

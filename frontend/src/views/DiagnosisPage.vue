@@ -98,7 +98,7 @@ import { getJobList } from '@/api/jobs'
 import { useUserStore } from '@/stores/user'
 
 const route = useRoute(); const router = useRouter(); const store = useUserStore()
-const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const demoMode = computed(() => publicPreview && route.query.demo === '1')
 const assessment = ref<AssessmentResponse | null>(null); const loading = ref(false); const loadError = ref(''); const progress = ref({ label: '正在解析学习情况', percent: 0 }); const running = ref(false)
 const radarRef = ref<HTMLDivElement | null>(null); const scoreRef = ref<HTMLDivElement | null>(null); let chart: echarts.ECharts | null = null; let scoreChart: echarts.ECharts | null = null; let progressTimer: number | null = null
@@ -249,7 +249,7 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
 </script>
 
 <style scoped>
-.diagnosis-page { background: radial-gradient(circle at 50% 36%, rgba(222,250,222,.62), transparent 41%), radial-gradient(circle at 83% 13%, rgba(134,231,177,.1), transparent 27%), linear-gradient(180deg,#fdfffe 0%,#f5fbf7 100%); }
+.diagnosis-page { background: radial-gradient(circle at 50% 36%, rgba(222,250,222,.38), transparent 39%), radial-gradient(circle at 83% 13%, rgba(134,231,177,.08), transparent 27%), linear-gradient(180deg,#fdfffe 0%,#f5fbf7 100%); }
 .diagnosis-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
 .diagnosis-heading .page-title { display: flex; align-items: center; gap: 9px; }
 .diagnosis-heading .page-title svg { width: 26px; color: var(--green-accent); }
@@ -312,9 +312,10 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
 
 .core-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(520px, 1fr) minmax(220px, 280px);
+  grid-template-columns: minmax(270px, 320px) minmax(600px, 720px) minmax(270px, 320px);
   gap: clamp(16px, 1.25vw, 22px);
   align-items: center;
+  justify-content: space-between;
   width: 100%;
 }
 .core-grid > * { min-width: 0; max-width: 100%; }
@@ -454,6 +455,9 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
 .quality-strip b { color: var(--green-deep); font-size: 11px; }
 .quality-strip button { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--green-deep); font-weight: 700; font-size: 11px; cursor: pointer; }
 .quality-strip button svg { width: 13px; }
+@media (max-width: 1500px) and (min-width: 721px) {
+  .core-grid { grid-template-columns: minmax(240px, 280px) minmax(560px, 1fr) minmax(240px, 280px); }
+}
 @media (max-width: 1260px) { .core-grid { grid-template-columns: minmax(220px, .72fr) minmax(520px, 1.3fr); } .dimension-card { grid-column: 1/3; min-height: auto; } .dimension-list { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; } .analysis-grid { grid-template-columns: 1fr 1fr; } .roadmap-card { grid-column: 1/3; } .empty-visual-grid { grid-template-columns: .7fr 1.4fr; } .empty-dimension-preview { grid-column: 1/3; min-height: auto; display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; } .empty-dimension-preview > .empty-label { grid-column: 1/6; } .empty-dimension-preview > div { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .diagnosis-heading { display: block; } .heading-actions { margin-top: 15px; } .diagnosis-error { display: block; } .diagnosis-error button { margin: 14px 0 0; } .empty-diagnostic { padding: 14px; } .empty-visual-grid { grid-template-columns: 1fr; } .empty-match-preview { display: none; } .empty-core-stage { min-height: 400px; } .empty-dimension-preview { grid-column: auto; display: block; } .empty-process { grid-template-columns: 1fr 1fr; gap: 15px 0; } .empty-process > div:nth-child(2) { border-right: 0; } .core-grid { grid-template-columns: 1fr; } .diagnostic-core { order: -1; min-height: 510px; } .dimension-card { grid-column: auto; } .core-glass { width: 94%; } .core-body { grid-template-columns: 1fr; height: auto; } .core-topline { display: none; } .score-dial { margin: 13px auto 0; } .radar-chart { height: 220px; } .core-meta { flex-wrap: wrap; } .dimension-list { grid-template-columns: 1fr; } .analysis-grid { grid-template-columns: 1fr; } .roadmap-card { grid-column: auto; } .evidence-insights { grid-template-columns: 1fr; } .evidence-insights > section { padding: 0; } .evidence-insights > section + section { margin-top: 20px; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); } .quality-strip { grid-template-columns: 1fr 1fr; } .quality-strip > div { border: 0; } .calibration-panel { grid-template-columns: 1fr; } .calibration-fields { grid-template-columns: 1fr 1fr; } .calibration-actions { grid-column: auto; display: block; } .calibration-actions button { margin-top: 12px; } .match-card { min-height: 290px; } }
 /* Diagnostic Console V4: clean liquid glass with restrained environmental light. */
@@ -462,8 +466,8 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   min-height: 438px;
   border: 1px solid rgba(255,255,255,.58);
   background:
-    radial-gradient(ellipse at 50% 94%, rgba(161,230,189,.11), transparent 42%),
-    linear-gradient(145deg, rgba(255,255,255,.2), rgba(249,255,252,.085) 58%, rgba(216,245,228,.055));
+    radial-gradient(ellipse at 50% 94%, rgba(161,230,189,.075), transparent 42%),
+    linear-gradient(145deg, rgba(255,255,255,.17), rgba(249,255,252,.055) 58%, rgba(216,245,228,.035));
   box-shadow:
     0 32px 82px rgba(18,78,47,.07),
     inset 0 1px 1px rgba(255,255,255,.78),
@@ -477,7 +481,7 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(96,210,143,.18) 0%, rgba(206,246,221,.1) 48%, transparent 76%);
   filter: blur(15px);
-  opacity: .52;
+  opacity: .3;
 }
 .diagnostic-core::after {
   background:
@@ -491,7 +495,7 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   height: 108%;
   object-position: center 67%;
   mix-blend-mode: normal;
-  opacity: .24;
+  opacity: .3;
   mask-image: radial-gradient(ellipse at 50% 68%, #000 42%, rgba(0,0,0,.68) 62%, transparent 88%);
   filter: saturate(.78) contrast(.96) brightness(1.12);
 }
@@ -499,7 +503,7 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   position: relative;
   z-index: 4;
   isolation: isolate;
-  width: min(780px, calc(100% - 46px));
+  width: min(760px, calc(100% - 36px));
   min-height: 356px;
   margin-top: -18px;
   padding: 20px 23px 14px;
@@ -509,7 +513,7 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   outline-offset: -4px;
   border-radius: 29px;
   background:
-    linear-gradient(138deg, rgba(255,255,255,.3) 0%, rgba(253,255,254,.17) 34%, rgba(244,252,247,.1) 68%, rgba(214,242,225,.07) 100%) padding-box,
+    linear-gradient(138deg, rgba(255,255,255,.34) 0%, rgba(253,255,254,.15) 34%, rgba(244,252,247,.075) 68%, rgba(214,242,225,.055) 100%) padding-box,
     linear-gradient(132deg, rgba(255,255,255,.96), rgba(255,255,255,.28) 31%, rgba(151,232,183,.24) 73%, rgba(255,255,255,.72)) border-box;
   box-shadow:
     0 39px 88px rgba(12,73,42,.12),
@@ -657,5 +661,16 @@ watch(() => [assessmentId.value, demoMode.value], () => { chart?.dispose(); scor
   .radar-chart { height: 235px; }
   .core-meta { flex-wrap: wrap; }
   .diagnostic-platform { inset: 22% -11% -9%; width: 122%; height: 90%; }
+}
+
+/* Final desktop composition pass: match the reference's compact title-to-core rhythm. */
+@media (min-width: 1061px) {
+  .diagnosis-page { padding-top: 26px; }
+  .diagnosis-heading { margin-bottom: -6px; }
+  .diagnosis-heading .eyebrow { display: none; }
+  .diagnosis-heading .page-title { margin-top: 0; margin-bottom: 6px; font-size: clamp(40px, 2.4vw, 43px); }
+  .diagnosis-heading .page-subtitle { font-size: 13px; line-height: 1.55; }
+  .diagnostic-core { min-height: 425px; }
+  .core-glass { margin-top: -35px; }
 }
 </style>

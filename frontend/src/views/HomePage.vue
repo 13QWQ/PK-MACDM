@@ -92,11 +92,12 @@ import {
   DataAnalysis, DocumentChecked, Files, Guide, MagicStick, Monitor, Service, UserFilled, VideoPlay,
 } from '@element-plus/icons-vue'
 import { getJobList, type JobInfo } from '@/api/jobs'
+import { previewJobs } from '@/fixtures/previewJobs'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const store = useUserStore()
-const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const jobs = ref<JobInfo[]>([])
 const jobsLoading = ref(true)
 const jobsError = ref(false)
@@ -125,6 +126,11 @@ const proofPoints: Array<{ icon: Component; title: string; detail: string }> = [
 async function loadJobs() {
   jobsLoading.value = true
   jobsError.value = false
+  if (publicPreview) {
+    jobs.value = previewJobs
+    jobsLoading.value = false
+    return
+  }
   try { jobs.value = await getJobList() } catch { jobsError.value = true } finally { jobsLoading.value = false }
 }
 function startAssessment(jobId?: string) {
@@ -132,7 +138,7 @@ function startAssessment(jobId?: string) {
     router.push({ path: '/login', query: { next: jobId ? `/input?job=${jobId}` : '/input' } })
     return
   }
-  router.push({ path: '/input', query: jobId ? { job: jobId } : undefined })
+  router.push({ path: '/input', query: publicPreview ? { ...(jobId ? { job: jobId } : {}), demo: '1' } : (jobId ? { job: jobId } : undefined) })
 }
 function scrollToRoles() { document.querySelector('#roles')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 function moveSpotlight(event: PointerEvent) {
@@ -184,7 +190,7 @@ onBeforeUnmount(() => { heroRadar?.dispose(); window.removeEventListener('resize
     radial-gradient(ellipse at 64% 98%, rgba(158,239,194,.16), transparent 43%),
     linear-gradient(180deg, #fff 0%, #fbfefc 58%, #f8fcfa 100%);
 }
-.home-page .content-width { width: min(1490px, 100%); }
+.home-page .content-width { width: min(1360px, 100%); }
 .hero {
   height: 408px;
   display: grid;
@@ -421,8 +427,8 @@ onBeforeUnmount(() => { heroRadar?.dispose(); window.removeEventListener('resize
   .home-page { padding: 10px 14px 20px; }
   .hero { height: auto; grid-template-columns: 1fr; }
   .hero-copy { padding: 0 3px; transform: none; }
-  .hero h1 { font-size: 38px; }
-  .headline-line { white-space: normal; }
+  .hero h1 { font-size: clamp(28px, 8.25vw, 32px); }
+  .headline-line { white-space: nowrap; }
   .spatial-hub { width: auto; height: 350px; justify-self: stretch; order: -1; margin: -22px -36px 0; overflow: hidden; }
   .hub-visual { left: -34%; width: 142%; }
   .float-card { animation: none; }

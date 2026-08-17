@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '@/api/request'
 
 // 仅供本地界面验收使用。未设置时（含生产构建）仍按正常账户权限保护页面。
-const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 
 const routes = [
   {

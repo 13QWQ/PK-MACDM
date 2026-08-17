@@ -159,7 +159,7 @@ import { useUserStore } from '@/stores/user'
 const route = useRoute()
 const router = useRouter()
 const store = useUserStore()
-const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const resources = ref<ResourceInfo[]>([])
 const libraryLoading = ref(false)
 const libraryError = ref('')
@@ -442,4 +442,92 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
   border-radius: 9px;
 }
 .bookmark.active svg { fill: currentColor; }
+
+/* Final visual audit: give the library the same three-column weight as the reference. */
+.library-heading {
+  width: calc(100% - 314px);
+  margin-left: 314px;
+}
+.library-layout {
+  grid-template-columns: minmax(280px, 290px) minmax(0, 1fr) minmax(280px, 290px);
+  gap: 24px;
+}
+.filter-panel { min-height: 650px; }
+.overview-column { min-height: 650px; }
+.spatial-resource-object {
+  min-height: 266px;
+  overflow: visible;
+}
+.spatial-resource-object img {
+  width: 136%;
+  height: 136%;
+  object-fit: contain;
+  object-position: 50% 50%;
+}
+@media (min-width: 1241px) {
+  .library-page { padding-top: 20px; }
+  .library-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 720px);
+    align-items: start;
+    gap: 24px;
+    margin-bottom: 8px;
+  }
+  .library-heading .eyebrow { display: none; }
+  .library-heading .page-title { margin-top: 9px; margin-bottom: 6px; }
+  .library-heading .page-subtitle { line-height: 1.5; }
+  .heading-actions { width: 100%; justify-content: space-between; margin-top: 12px; }
+  .search-box { width: 100%; }
+  .library-tools { margin-top: 0; margin-bottom: 28px; }
+  .library-layout { align-items: start; }
+  .filter-panel {
+    position: relative;
+    top: auto;
+    height: 815px;
+    min-height: 815px;
+    margin-top: -112px;
+    align-self: start;
+  }
+  .overview-column {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: 0;
+    margin-top: -12px;
+    display: flex;
+    align-self: start;
+  }
+  .overview-column > section { height: auto; min-height: 0; }
+  .learning-package { min-height: 310px; padding-block: 25px; }
+  .spatial-resource-object { min-height: 240px; }
+  .resource-card { min-height: 145px; padding: 12px; }
+  .resource-card-copy h3 { margin-top: 9px; }
+  .resource-card-copy p { display: none; }
+  .resource-meta { padding-top: 7px; }
+  .resource-footer { margin-top: 7px; }
+  .overview-card, .collection-card { padding: 17px 19px; }
+  .overview-column > .overview-card,
+  .overview-column > .collection-card { height: 348px; min-height: 348px; }
+  .overview-score { padding-top: 15px; padding-bottom: 10px; }
+  .overview-line { padding-top: 10px; padding-bottom: 9px; }
+  .overview-card > button { margin-top: 12px; }
+  .pipeline-list { margin-top: 13px; }
+  .pipeline-list li { padding-bottom: 12px; }
+  .package-copy h2 { margin-top: 12px; margin-bottom: 6px; }
+  .package-tags { margin-top: 10px; }
+  .package-progress { margin-top: 12px; }
+  .package-actions { margin-top: 14px; }
+}
+@media (max-width: 1240px) and (min-width: 821px) {
+  .library-heading { width: 100%; margin-left: 0; }
+  .library-layout { grid-template-columns: 210px minmax(0, 1fr); gap: 18px; }
+  .filter-panel { min-height: 0; }
+  .overview-column { min-height: 0; }
+}
+@media (max-width: 820px) {
+  .library-heading { width: 100%; margin-left: 0; }
+  .filter-panel { min-height: 0; }
+  .overview-column { min-height: 0; }
+  .spatial-resource-object img { width: 100%; height: 100%; }
+}
 </style>

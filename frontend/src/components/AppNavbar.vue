@@ -8,7 +8,7 @@
 
       <div class="nav-links">
         <router-link to="/">首页</router-link>
-        <router-link to="/input">资料审查</router-link>
+        <router-link :to="inputLink">资料审查</router-link>
         <router-link :to="diagnosisLink">能力诊断</router-link>
         <router-link :to="libraryLink">资料库</router-link>
       </div>
@@ -41,17 +41,18 @@ import { useUserStore } from '@/stores/user'
 
 const store = useUserStore()
 const router = useRouter()
-const publicPreview = import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
 const isScrolled = ref(false)
 const diagnosisLink = computed(() => {
   if (publicPreview) return '/diagnosis?demo=1'
   const id = store.userInfo?.latest_assessment_id
   return id ? `/diagnosis/${id}` : '/diagnosis'
 })
+const inputLink = computed(() => publicPreview ? '/input?demo=1' : '/input')
 const libraryLink = computed(() => publicPreview ? '/library?demo=1' : '/library')
 const openAssessment = () => {
   if (publicPreview || store.isLoggedIn) {
-    router.push('/input')
+    router.push(publicPreview ? '/input?demo=1' : '/input')
     return
   }
   router.push('/login?next=/input')

@@ -26,8 +26,9 @@
               <span class="message-avatar"><Cpu /></span>
               <div class="bubble"><p>你好，我是资料审查 Agent。上传资料或描述你的经历，我会协调多个专业 Agent 建立能力证据图谱。</p><time>已就绪</time></div>
             </div>
-            <div v-if="userInput.trim()" class="message user-message"><div class="bubble"><p>{{ userInput }}</p><time>待提交</time></div></div>
-            <div v-if="reviewHint" class="message agent-message continuation"><div class="bubble review-feedback"><b>{{ reviewSufficient ? '资料审查通过' : '建议补充资料' }}</b><p>{{ reviewHint }}</p><small v-if="reviewMissing.length">可补充：{{ reviewMissing.join('、') }}</small></div></div>
+            <div v-if="demoMode || userInput.trim()" class="message user-message"><div class="bubble"><p>{{ demoMode ? previewUserInput : userInput }}</p><time>{{ demoMode ? '10:30' : '待提交' }}</time></div></div>
+            <div v-if="reviewHint && !demoMode" class="message agent-message continuation"><div class="bubble review-feedback"><b>{{ reviewSufficient ? '资料审查通过' : '建议补充资料' }}</b><p>{{ reviewHint }}</p><small v-if="reviewMissing.length">可补充：{{ reviewMissing.join('、') }}</small></div></div>
+            <div v-if="demoMode" class="message agent-message continuation"><div class="bubble typing-bubble"><span>正在分析你的材料，请稍候</span><i></i><i></i><i></i></div></div>
             <div v-if="submitting" class="message agent-message continuation"><div class="bubble typing-bubble"><span>{{ liveProgress.label }}</span><i></i><i></i><i></i></div></div>
 
             <div v-if="!userInput.trim() && !submitting && !materials.length" class="workspace-empty">
@@ -60,7 +61,7 @@
         </section>
 
         <aside class="review-inspector glass-surface">
-          <header class="inspector-head"><div><span class="eyebrow">REVIEW INSPECTOR</span><h2>审查控制台</h2></div><span class="inspector-state" :class="{ running: submitting }"><i></i>{{ submitting ? '审查中' : reviewSufficient ? '已就绪' : '待开始' }}</span></header>
+          <header class="inspector-head"><div><span class="eyebrow">REVIEW INSPECTOR</span><h2>审查控制台</h2></div><span class="inspector-state" :class="{ running: submitting || demoMode }"><i></i>{{ submitting || demoMode ? '审查中' : reviewSufficient ? '已就绪' : '待开始' }}</span></header>
 
           <section class="inspector-section target-section">
             <div class="section-label"><Briefcase /> 目标岗位</div>
@@ -71,7 +72,7 @@
 
           <section class="inspector-section progress-section">
             <div class="section-label"><DataAnalysis /> 审查进度</div>
-            <div class="progress-layout"><div class="progress-ring" :style="{ '--p': `${displayProgress * 3.6}deg` }"><b>{{ displayProgress }}%</b></div><div class="progress-copy"><span>整体进度</span><div class="track"><i :style="{ width: `${displayProgress}%` }"></i></div><small>{{ submitting ? liveProgress.label : reviewSufficient ? '资料可进入能力诊断' : '提交资料后开始' }}</small></div></div>
+            <div class="progress-layout"><div class="progress-ring" :style="{ '--p': `${displayProgress * 3.6}deg` }"><b>{{ displayProgress }}%</b></div><div class="progress-copy"><span>整体进度</span><div class="track"><i :style="{ width: `${displayProgress}%` }"></i></div><small>{{ submitting || demoMode ? liveProgress.label : reviewSufficient ? '资料可进入能力诊断' : '提交资料后开始' }}</small></div></div>
             <div v-if="submitting" class="live-agent"><span class="live-agent-dot"></span><div><small>当前执行</small><b>{{ liveProgress.agent }}</b></div><em>{{ liveProgress.status === 'failed' ? '执行失败' : '实时同步' }}</em></div>
             <ol v-if="progressEvents.length" class="progress-events" aria-label="Agent 执行记录">
               <li v-for="event in progressEvents" :key="`${event.updated_at}-${event.percent}-${event.label}`" :class="event.status"><i></i><div><b>{{ event.agent }}</b><span>{{ event.label }}</span></div><strong>{{ event.percent }}%</strong></li>
@@ -88,7 +89,7 @@
           <section class="inspector-section quality-section">
             <div class="section-label"><CircleCheck /> 证据质量</div>
             <div class="quality-row"><span>已解析资料</span><b>{{ parsedMaterialCount }} 项</b></div>
-            <div class="quality-row"><span>学习描述</span><b>{{ userInput.trim().length >= 20 ? '已补充' : '待补充' }}</b></div>
+            <div class="quality-row"><span>学习描述</span><b>{{ demoMode || userInput.trim().length >= 20 ? '已补充' : '待补充' }}</b></div>
             <div class="quality-row"><span>完整度</span><b>{{ evidenceLabel }}</b></div>
             <div class="evidence-meter"><i :style="{ width: `${evidencePercent}%` }"></i></div>
           </section>
@@ -117,12 +118,15 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getJobList, type JobInfo } from '@/api/jobs'
+import { previewJobs } from '@/fixtures/previewJobs'
 import { createAssessment, getAssessmentProgress, reviewInput, submitAssessment, type AssessmentProgress } from '@/api/assessment'
 import { createSession } from '@/api/session'
 import { createTextMaterial, deleteMaterial, getMaterialList, uploadMaterial, type MaterialStatus, type UserMaterial } from '@/api/material'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter(); const route = useRoute(); const store = useUserStore()
+const publicPreview = import.meta.env.DEV && import.meta.env.VITE_PUBLIC_PREVIEW === 'true'
+const demoMode = computed(() => publicPreview && route.query.demo === '1')
 const jobs = ref<JobInfo[]>([]); const jobLoading = ref(true); const jobError = ref(false); const selectedJobId = ref('')
 const userInput = ref(''); const reviewHint = ref(''); const reviewMissing = ref<string[]>([]); const reviewSufficient = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null); const materials = ref<UserMaterial[]>([]); const materialsLoading = ref(false); const uploading = ref(false); const uploadError = ref('')
@@ -130,13 +134,27 @@ const submitting = ref(false); const assessmentId = ref('')
 const liveProgress = ref<AssessmentProgress>({ stage: 'material', agent: '资料解析 Agent', label: '等待开始', percent: 0, status: 'waiting', updated_at: null, events: [] })
 let progressTimer: number | null = null; let progressPolling = false
 const dragging = ref(false); const composerFocused = ref(false)
+const previewUserInput = '我做过一个电商平台前端项目，负责商品列表、购物车和订单页面，使用 Vue、JavaScript 和接口联调。熟悉 Git 协作，但对性能优化和工程化部署还不够熟悉。'
+const previewMaterials: UserMaterial[] = [
+  { id: 'preview-material-resume', job_id: 'preview-frontend', assessment_id: 'preview-assessment', original_name: '张三_前端开发工程师_简历.pdf', content_type: 'application/pdf', size_bytes: 2400000, status: 'parsed', extracted_text: '前端开发经历与项目成果', source_url: null, error_message: null, created_at: '2026-08-17T09:30:00Z' },
+  { id: 'preview-material-project', job_id: 'preview-frontend', assessment_id: 'preview-assessment', original_name: '电商平台项目说明.pdf', content_type: 'application/pdf', size_bytes: 1800000, status: 'parsed', extracted_text: '电商平台核心功能与技术方案', source_url: null, error_message: null, created_at: '2026-08-17T09:31:00Z' },
+  { id: 'preview-material-image', job_id: 'preview-frontend', assessment_id: 'preview-assessment', original_name: '项目截图_核心功能.png', content_type: 'image/png', size_bytes: 3100000, status: 'processing', extracted_text: null, source_url: null, error_message: null, created_at: '2026-08-17T09:32:00Z' },
+  { id: 'preview-material-github', job_id: 'preview-frontend', assessment_id: 'preview-assessment', original_name: 'GitHub_zhangsan.pdf', content_type: 'application/pdf', size_bytes: 1200000, status: 'uploaded', extracted_text: null, source_url: null, error_message: null, created_at: '2026-08-17T09:33:00Z' },
+]
 const selectedJob = computed(() => jobs.value.find(job => job.id === selectedJobId.value) || null)
 const parsedMaterialCount = computed(() => materials.value.filter(item => item.status === 'parsed').length)
-const evidencePercent = computed(() => Math.min(100, (userInput.value.trim().length >= 20 ? 32 : 0) + parsedMaterialCount.value * 23 + (materials.value.length ? 10 : 0)))
+const evidencePercent = computed(() => Math.min(100, ((demoMode.value || userInput.value.trim().length >= 20) ? 32 : 0) + parsedMaterialCount.value * 23 + (materials.value.length ? 10 : 0)))
 const evidenceLabel = computed(() => evidencePercent.value >= 70 ? '较完整' : evidencePercent.value >= 40 ? '可用' : '待补充')
-const displayProgress = computed(() => submitting.value ? Math.max(4, liveProgress.value.percent) : reviewSufficient.value ? Math.max(62, evidencePercent.value) : evidencePercent.value)
+const displayProgress = computed(() => demoMode.value ? liveProgress.value.percent : submitting.value ? Math.max(4, liveProgress.value.percent) : reviewSufficient.value ? Math.max(62, evidencePercent.value) : evidencePercent.value)
 const progressEvents = computed(() => liveProgress.value.events.slice(-4).reverse())
 const pipeline = computed(() => {
+  if (demoMode.value) return [
+    { icon: DocumentCopy, name: '资料解析 Agent', detail: '解析描述与上传资料', status: 'completed' },
+    { icon: Search, name: '能力诊断 Agent', detail: '抽取证据并对照能力模型', status: 'running' },
+    { icon: Link, name: '路径规划 Agent', detail: '依据能力缺口规划路径', status: 'waiting' },
+    { icon: Cpu, name: '资源生成 Agent', detail: '检索知识库并生成资源', status: 'waiting' },
+    { icon: CircleCheck, name: '审核纠偏 Agent', detail: '校验来源与生成内容', status: 'waiting' },
+  ]
   const p = liveProgress.value.percent
   const active = submitting.value
   const failedStage = liveProgress.value.status === 'failed' ? liveProgress.value.stage : ''
@@ -150,8 +168,33 @@ const pipeline = computed(() => {
   ]
 })
 
-async function loadJobs() { jobLoading.value = true; jobError.value = false; try { jobs.value = await getJobList(); const queryJob = typeof route.query.job === 'string' ? route.query.job : ''; if (queryJob && jobs.value.some(job => job.id === queryJob)) selectedJobId.value = queryJob; else if (!selectedJobId.value && jobs.value[0]) selectedJobId.value = jobs.value[0].id; } catch { jobError.value = true } finally { jobLoading.value = false } }
-async function loadMaterials() { if (!selectedJobId.value || !store.isLoggedIn) { materials.value = []; return }; materialsLoading.value = true; try { materials.value = await getMaterialList({ job_id: selectedJobId.value }) } catch { materials.value = [] } finally { materialsLoading.value = false } }
+async function loadJobs() {
+  jobLoading.value = true
+  jobError.value = false
+  if (publicPreview) {
+    jobs.value = previewJobs
+  } else {
+    try { jobs.value = await getJobList() } catch { jobError.value = true }
+  }
+  const queryJob = typeof route.query.job === 'string' ? route.query.job : ''
+  if (queryJob && jobs.value.some(job => job.id === queryJob)) selectedJobId.value = queryJob
+  else if (!selectedJobId.value && jobs.value[0]) selectedJobId.value = jobs.value[0].id
+  if (demoMode.value) {
+    userInput.value = ''
+    reviewHint.value = '已识别项目经历、技术栈与协作证据，正在继续核验材料完整度。'
+    reviewSufficient.value = true
+    materials.value = previewMaterials
+    liveProgress.value = {
+      stage: 'diagnosis', agent: '项目核验 Agent', label: '核验项目真实性与贡献度', percent: 62, status: 'running', updated_at: '2026-08-17T09:34:00Z',
+      events: [
+        { stage: 'material', agent: '资料解析 Agent', label: '已完成资料解析', percent: 22, status: 'completed', updated_at: '2026-08-17T09:31:00Z' },
+        { stage: 'diagnosis', agent: '项目核验 Agent', label: '核验项目真实性与贡献度', percent: 62, status: 'running', updated_at: '2026-08-17T09:34:00Z' },
+      ],
+    }
+  }
+  jobLoading.value = false
+}
+async function loadMaterials() { if (demoMode.value) return; if (!selectedJobId.value || !store.isLoggedIn) { materials.value = []; return }; materialsLoading.value = true; try { materials.value = await getMaterialList({ job_id: selectedJobId.value }) } catch { materials.value = [] } finally { materialsLoading.value = false } }
 function onJobChange() { resetReview(); loadMaterials() }
 function resetReview() { reviewHint.value = ''; reviewMissing.value = []; reviewSufficient.value = false }
 function focusComposer() { nextTick(() => document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus()) }
@@ -192,7 +235,7 @@ onMounted(loadJobs); onBeforeUnmount(stopPolling)
 .review-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
 .heading-action { height: 40px; padding: 0 14px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.6); color: var(--ink-soft); font-size: 12px; cursor: pointer; }
 .heading-action svg { width: 15px; }
-.workspace-grid { display: grid; grid-template-columns: minmax(0, 1.82fr) minmax(315px, .62fr); gap: 22px; align-items: stretch; }
+.workspace-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(360px, 1fr); gap: 22px; align-items: stretch; }
 .review-workspace {
   min-height: 628px;
   padding: 20px;
@@ -344,4 +387,22 @@ onMounted(loadJobs); onBeforeUnmount(stopPolling)
 .error-state button { border: 0; border-radius: 10px; padding: 9px 12px; margin-left: auto; background: var(--gradient-primary); color: #fff; cursor: pointer; }
 @media (max-width: 1060px) { .workspace-grid { grid-template-columns: 1fr; } .review-inspector { min-height: auto; display: grid; grid-template-columns: repeat(2,1fr); gap: 0 22px; } .inspector-head { grid-column: 1 / 3; } .inspector-section:nth-of-type(1), .inspector-section:nth-of-type(2) { border-top: 1px solid var(--line); } .pipeline-track { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; } .pipeline-link { display: none; } }
 @media (max-width: 680px) { .review-heading { display: block; } .heading-action { margin-top: 15px; } .workspace-top { align-items: flex-start; flex-direction: column; } .job-picker select { max-width: 230px; } .review-workspace { padding: 14px; min-height: 640px; } .conversation { min-height: 330px; } .workspace-empty { inset-top: 100px; } .empty-actions { flex-wrap: wrap; justify-content: center; } .composer-tools { align-items: flex-end; } .submit-group > span { display: none; } .tool-group button { padding-inline: 7px; } .review-inspector { display: block; padding: 18px; } .inspector-head { display: flex; } .pipeline { padding: 16px; } .pipeline-title { display: block; } .pipeline-caption { display: block; margin-top: 8px; } .pipeline-track { grid-template-columns: 1fr; } .message { max-width: 96%; } .error-state { display: block; } .error-state > * { display: block; margin: 8px 0; } .error-state button { margin-left: 0; } }
+
+/* Final desktop composition pass: keep the workspace and the multi-agent strip in one viewport. */
+@media (min-width: 1061px) {
+  .review-heading .eyebrow { display: none; }
+  .review-heading { margin-bottom: 55px; }
+  .review-workspace { min-height: 480px; }
+  .review-inspector {
+    min-height: 640px;
+    margin-top: -170px;
+    padding: 18px 21px 17px;
+  }
+  .review-inspector .inspector-head { display: none; }
+  .review-inspector .inspector-section { padding-top: 9px; padding-bottom: 9px; }
+  .review-inspector .progress-events { display: none; }
+  .conversation { min-height: 215px; }
+  .composer textarea { height: 58px; }
+  .pipeline { margin-top: 16px; }
+}
 </style>

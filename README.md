@@ -4,6 +4,9 @@
 
 系统服务于已经明确目标岗位、但需要判断自身能力是否达标的学习者。用户提交学习描述、简历、项目材料和课程记录后，系统提取能力证据，对照岗位能力模型识别差距，再基于领域知识库生成学习路径与培训资源，并对生成内容进行来源校验。
 
+> **本次交付重点：七 Agent 串行协同 + 精确上下文管理。**
+> 项目不是把一段超长历史文本反复交给多个模型，而是为每个 Agent 建立独立的输入白名单、输出契约、上下文长度上限、证据来源链和可追踪快照。每一步只能读取上一步批准的结构化产物，未经校验的内容不得进入资源生成和前端展示。详细实现见 `backend/adapters/context_manager.py`，详细阶段契约见 `backend/workflow/serial-workflow.json` 和 `backend/prompts/`。
+
 ## 核心闭环
 
 ```text
@@ -36,7 +39,7 @@
 ### 诊断与 Agent
 
 - 输入充分性审查，不足时返回针对性补充建议
-- 资料解析、能力诊断、路径规划、资源生成、审核纠偏串行协作
+- 七个 Agent 串行协作：学情解析、知识库检索、能力诊断、结果校验、真实结果准确率校准、资源生成、学习路径规划
 - 16 维能力向量、能力矩阵、知识缺口和岗位匹配结果
 - 基于客观题、实操结果或专家标注的真实结果校准
 - 当前 Agent、阶段说明、百分比和最近事件实时展示
@@ -67,15 +70,42 @@
 ## Agent 工作流
 
 ```text
-资料解析 Agent
-  -> 能力诊断 Agent
-  -> 真实结果校准 Agent
-  -> 路径规划 Agent
-  -> 资源生成 Agent
-  -> 审核纠偏 Agent
+1. 自由文本学情解析 Agent
+2. 岗位知识库检索 Agent
+3. 岗位能力诊断 Agent
+4. 诊断结果校验 Agent
+5. 真实结果校准 Agent
+6. 个性化资源生成 Agent
+7. 个性化学习路径 Agent
 ```
 
-每个阶段使用独立 Prompt 和结构化输出约束。LLM 不可用时，诊断模块会降级到确定性规则逻辑；知识库没有可靠来源时，资源不得以正式可信资源状态写入。
+七个 Agent 的代码入口、提示词和阶段接口如下：
+
+| 顺序 | Agent | Python 实现 | Prompt | 主要输出 |
+|---|---|---|---|---|
+| 1 | 自由文本学情解析 Agent | `InputParsingAgent.run()` | `prompts/01_parse_input.md` | 技能证据、正向技能、否定技能、未知技能 |
+| 2 | 岗位知识库检索 Agent | `RAGEvidenceAgent.run()` | `prompts/02_retrieve_knowledge.md` | `source_chunk_id`、原文、检索分数 |
+| 3 | 岗位能力诊断 Agent | `CapabilityScoringAgent.run()` | `prompts/03_diagnose_capability.md` | 16 维能力向量、能力缺口、置信度 |
+| 4 | 诊断结果校验 Agent | `CalibrationAgent.run()` | `prompts/04_calibrate_result.md` | 字段、数值、证据链校验结果 |
+| 5 | 真实结果校准 Agent | `GroundTruthCalibrationAgent.run()` | `prompts/05_calibrate_against_ground_truth.md` | 准确率、MAE、校准记录 |
+| 6 | 个性化资源生成 Agent | `ResourceAgent.run()` | `prompts/05_generate_resource.md` | 讲义、练习或案例资源 |
+| 7 | 个性化学习路径 Agent | `PathAgent.run()` | `prompts/06_plan_path.md` | 分阶段学习路径 |
+
+这里的“七个接口”指七个 Agent 的内部 Python `run()` 阶段接口；对前端公开的是统一的业务 HTTP 接口。`POST /api/assessment/{id}/submit` 负责按顺序调度七个 Agent，`/calibrate`、`/progress` 和 `/agents` 分别负责真实结果校准、实时进度和轨迹查询，不把七个内部阶段强行拆成七个互不兼容的 HTTP 服务。
+
+资源生成后的知识库来源校验属于防幻觉护栏，不另计为第八个 Agent：它由 `review_resources()` 和 `guardrail.py` 执行，负责检查 `source_chunk_id`、原文绑定、来源泄漏和生成内容一致性。LLM 不可用时，诊断模块会降级到确定性规则逻辑；知识库没有可靠来源时，资源不得以正式可信资源状态写入。
+
+### 精确上下文管理
+
+多 Agent 不是把所有历史文本直接拼接给下一个模型，而是使用 `backend/adapters/context_manager.py` 建立有边界的上下文账本。每个阶段具有：
+
+- `trace_id`、`stage`、`sequence`、`schema_version` 和 `prompt_version`，保证一次运行可追踪、可复现；
+- 输入白名单，只接收本阶段需要的字段，禁止跨阶段读取用户原始资料、无关历史消息或其他 Agent 的内部推理；
+- 文本、列表和知识片段数量上限，知识片段只保留 `source_chunk_id`、标题、分数和截断原文，避免上下文无限膨胀；
+- 输出快照、`evidence_id`、`source_chunk_id` 和校准状态，形成阶段级证据链；
+- 失败时保留失败阶段和输入摘要，允许重试或人工复核，不使用未经审核的中间结果。
+
+上下文传递规则为“阶段产物白名单传递”：解析 Agent 只输出能力证据，检索 Agent 只输出知识来源，诊断 Agent 只输出能力判断，校验与真实结果校准 Agent 负责拦截错误，资源和路径 Agent 只能读取已批准的缺口与来源。完整上下文账本会写入 Agent 轨迹，供前端协同看板和测试文档核验。
 
 置信度与准确率是两个不同指标：
 
@@ -117,8 +147,8 @@ GET /api/assessment/{assessment_id}/progress
 - 用户只能读取和修改自己的评估、资料、资源收藏及学习记录。
 - 首页与登录页允许公开访问。
 - 资料审查、能力诊断、资料库、资源详情和个人中心默认需要登录。
-- `VITE_PUBLIC_PREVIEW=true` 只用于本地视觉验收，仅跳过前端路由守卫，不会绕过后端接口认证。
-- 正式运行和生产构建不得启用公开预览。
+- `VITE_PUBLIC_PREVIEW=true` 只用于本地开发视觉验收；源码同时要求 `import.meta.env.DEV`，生产构建会强制关闭公开预览。
+- 正式运行和生产构建始终启用登录认证，资料审查、能力诊断、资料库和资源详情不会因环境变量误配而公开。
 
 生产环境必须设置新的 JWT 密钥：
 
@@ -329,34 +359,6 @@ npm run build
 ```
 
 当前自动化测试覆盖校准数据持久化、资源收藏、学习进度、评估删除清理和 Agent 进度事件。比赛指标仍需使用独立测试集、人工标注和真实学习者样本计算，不能只引用单元测试通过率。
-
-## 常见问题
-
-### 首次诊断较慢
-
-BGE-M3 首次加载通常需要 20 到 40 秒。模型加载后会常驻进程，后续检索会更快。DeepSeek 响应时间还受输入长度、资源数量和 API 并发限制影响。
-
-### 进度一直不变化
-
-确认前端和后端连接的是同一环境，并检查：
-
-- `/api/assessment/{id}/progress` 是否返回最新百分比
-- 后端是否采用多个 Worker
-- 负载均衡是否把请求分发到不同实例
-
-多实例部署应使用 Redis 共享进度状态。
-
-### 生成内容模板化
-
-检查 `backend/llm_config.json` 中的 API Key、模型名和服务地址。LLM 不可用时系统会进入规则降级模式。
-
-### 向量检索为空
-
-确认 BGE-M3 模型目录、Qdrant 存储目录和集合名称均正确，并检查向量维度是否与入库时一致。
-
-### 返回 401
-
-业务接口需要 `Authorization: Bearer <token>`。请重新登录并确认前端没有启用公开预览。
 
 ## 安全说明
 
