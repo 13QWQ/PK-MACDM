@@ -1,190 +1,366 @@
-# 面向计算机类职业学习者的目标能力诊断与个性化学习资源生成系统
+# 职学导航：目标能力诊断与个性化培训资源生成系统
 
-> 竞赛项目 · 开发中
+面向计算机类职业学习者的多 Agent 能力诊断、资料审查与个性化培训资源生成平台。
 
-## 项目简介
+系统服务于已经明确目标岗位、但需要判断自身能力是否达标的学习者。用户提交学习描述、简历、项目材料和课程记录后，系统提取能力证据，对照岗位能力模型识别差距，再基于领域知识库生成学习路径与培训资源，并对生成内容进行来源校验。
 
-用户输入个人技能、项目经验、学习背景等自由文本，系统通过 AI 多智能体协同诊断其能力水平，识别知识薄弱点，并自动生成个性化的学习路径和学习资源。
+## 核心闭环
 
-## 技术栈
-
-| 部分 | 选型 |
-|------|------|
-| 后端 | Python 3.10+（FastAPI） |
-| 数据库 | SQLite |
-| 向量库 | Qdrant（本地文件模式）+ BGE-M3 嵌入模型 |
-| AI 推理 | DeepSeek API（含真实结果校准的串行 Agent，无 API 时自动降级为规则引擎） |
-| 防幻觉 | DeepSeek API（复用 LLM 配置，比对知识库原文，无需额外部署） |
-| 前端 | Vue 3 + Element Plus |
-
-## 环境准备
-
-### 1. Python 环境
-
-需要 Python 3.10 或以上版本。
-
-```bash
-cd backend
-pip install -r requirements.txt
+```text
+选择目标岗位
+  -> 提交自由文本或学习材料
+  -> 资料充分性审查
+  -> 多 Agent 能力诊断
+  -> 真实结果校准
+  -> 生成学习路径与培训资源
+  -> 知识库来源校验与审核纠偏
+  -> 学习、收藏、完成记录与复测
 ```
 
-> 依赖里 `FlagEmbedding` 会连带安装 PyTorch（体积较大）。国内直连慢，建议加镜像源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
+当前内置四个数字技术岗位方向：
 
-### 2. LLM 配置（重要）
+- 前端开发工程师
+- 后端开发工程师
+- 运维工程师
+- 产品经理
 
-编辑 `backend/llm_config.json`，在 `api_key` 字段填入你的 API Key：
+## 已实现功能
+
+### 用户与资料
+
+- 用户注册、登录、JWT 身份认证和密码修改
+- PDF、Word、文本、代码和常见图片资料上传
+- 用户资料解析、列表、下载和删除
+- 自由文本学习经历补充
+
+### 诊断与 Agent
+
+- 输入充分性审查，不足时返回针对性补充建议
+- 资料解析、能力诊断、路径规划、资源生成、审核纠偏串行协作
+- 16 维能力向量、能力矩阵、知识缺口和岗位匹配结果
+- 基于客观题、实操结果或专家标注的真实结果校准
+- 当前 Agent、阶段说明、百分比和最近事件实时展示
+- Agent 执行轨迹与知识库检索来源查询
+
+### 知识库与资源
+
+- Qdrant 本地向量库与 BGE-M3 语义检索
+- 讲义、练习、实操任务等个性化资源生成
+- `source_chunk_id`、`source_text` 与生成资源绑定
+- 生成内容与知识库原文比对，输出 `passed`、`partial` 或 `blocked`
+- 资源搜索、筛选、详情、收藏与取消收藏
+- 开始学习、完成学习和真实学习进度记录
+
+## 系统架构
+
+| 层级 | 技术与职责 |
+|---|---|
+| 前端 | Vue 3、TypeScript、Vite、Pinia、Element Plus、ECharts |
+| API | FastAPI 提供认证、资料、诊断、Agent、资源与学习记录接口 |
+| 业务数据 | SQLAlchemy + SQLite；部署时可迁移至 PostgreSQL/MySQL |
+| 向量检索 | Qdrant 本地存储岗位知识片段 |
+| Embedding | BGE-M3 将查询与知识片段编码为向量 |
+| Agent 编排 | Python 串行运行时、独立 Prompt、结构化 JSON 输出 |
+| 大模型 | DeepSeek 或任意 OpenAI 兼容 API |
+| 防幻觉 | 检索原文绑定、规则拦截和外部大模型二次校验 |
+
+## Agent 工作流
+
+```text
+资料解析 Agent
+  -> 能力诊断 Agent
+  -> 真实结果校准 Agent
+  -> 路径规划 Agent
+  -> 资源生成 Agent
+  -> 审核纠偏 Agent
+```
+
+每个阶段使用独立 Prompt 和结构化输出约束。LLM 不可用时，诊断模块会降级到确定性规则逻辑；知识库没有可靠来源时，资源不得以正式可信资源状态写入。
+
+置信度与准确率是两个不同指标：
+
+- 置信度描述系统对单次诊断依据充分程度的估计。
+- 准确率必须使用客观题、实操结果或专家标注作为真实值计算。
+- 没有真实标注时，校准状态为 `unvalidated`，不会用置信度代替准确率。
+
+详细规则参见 [GROUND_TRUTH_CALIBRATION.md](GROUND_TRUTH_CALIBRATION.md)。
+
+## 实时 Agent 进度
+
+诊断执行期间，后端维护有界进度事件序列，前端约每 0.9 秒读取一次：
+
+```http
+GET /api/assessment/{assessment_id}/progress
+```
+
+响应示例：
 
 ```json
 {
-  "base_url": "https://api.deepseek.com",
-  "model": "deepseek-flash",
-  "api_key": "sk-你的key",
-  "temperature": 0.7
+  "stage": "resource",
+  "agent": "资源生成 Agent",
+  "label": "正在生成学习资源 (3/8)",
+  "percent": 68,
+  "status": "running",
+  "updated_at": "2026-08-17T05:00:00Z",
+  "events": []
 }
 ```
 
-> **获取 DeepSeek API Key：** 访问 [platform.deepseek.com](https://platform.deepseek.com) 注册并充值（最低充值 ¥1），在 API Keys 页面创建 Key。
->
-> **不填 Key 也能用：** 系统会自动降级为规则引擎模式，输出模板化内容。接上 LLM 后内容质量会大幅提升。
+阶段包括 `material`、`diagnosis`、`path`、`resource`、`review` 和 `complete`。失败时进度不会被清空，而是返回 `failed`，便于前端终止动画并提示重试。
 
-支持任意 OpenAI 兼容的 API（OpenAI、阿里百炼、本地 vLLM 等），只需改这三个字段即可切换。
+> 当前进度事件保存在后端进程内，适用于本地演示和单 Worker 部署。采用多 Worker 或多服务器部署时，应将进度状态迁移到 Redis，并按 `assessment_id` 设置过期时间，避免负载均衡后读取到不同进程的数据。
 
-> 同一个 Key 同时用于主推理与防幻觉校验（见第 4 节），无需额外配置。
+## 登录与权限
 
-### 3. 向量库与嵌入模型
+- 后端业务接口通过 Bearer Token 校验当前用户。
+- 用户只能读取和修改自己的评估、资料、资源收藏及学习记录。
+- 首页与登录页允许公开访问。
+- 资料审查、能力诊断、资料库、资源详情和个人中心默认需要登录。
+- `VITE_PUBLIC_PREVIEW=true` 只用于本地视觉验收，仅跳过前端路由守卫，不会绕过后端接口认证。
+- 正式运行和生产构建不得启用公开预览。
 
-- **qdrant_storage 向量库**（2,269 条岗位知识片段）：本次交接包已附带与 `knowledge/active` 四个切片匹配的 `storage.sqlite`；如果只从 GitHub clone，需要从交接包补回该文件，或按知识库文档重新向量化。
-- **BGE-M3 嵌入模型**（约 2.2GB）：**需自行下载**（体积过大，未随仓库分发）。从 HuggingFace 下载 `BAAI/bge-m3`，把整个模型目录放到 `backend/bge-m3/`。国内可设镜像 `HF_ENDPOINT=https://hf-mirror.com` 加速。
+生产环境必须设置新的 JWT 密钥：
 
-> 缺少模型时后端不会崩溃，但向量检索会返回空、资源生成退化为模板内容；补全后即恢复完整效果。BGE-M3 首次加载约 20~40 秒，加载后常驻内存。
+```env
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+JWT_EXPIRE_MINUTES=1440
+```
 
-### 4. 防幻觉校验（无需单独部署）
+## 环境要求
 
-防幻觉校验复用 `backend/llm_config.json` 里的 DeepSeek API（与主推理同一个 Key），比对生成内容与知识库原文、判断是否编造。第 2 步配置好 LLM 后即自动可用，无需安装本地模型。
+- Python 3.10+
+- Node.js 18+
+- 约 3 GB 可用磁盘空间用于依赖和 BGE-M3
+- DeepSeek 或其他 OpenAI 兼容 API Key（可选，但建议配置）
 
-### 5. Node.js 环境
+## 安装
 
-需要 Node.js 18 或以上版本。
+### 后端
+
+```bash
+cd backend
+python -m venv .venv
+```
+
+Windows：
+
+```powershell
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Linux/macOS：
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`FlagEmbedding` 会安装 PyTorch，下载时间和体积较大。网络受限时可使用可信镜像源。
+
+### 前端
 
 ```bash
 cd frontend
 npm install
 ```
 
-## 快速启动
+## LLM 配置
 
-### 后端
+编辑 `backend/llm_config.json`：
+
+```json
+{
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-v4-flash",
+  "api_key": "sk-your-api-key",
+  "temperature": 0.7,
+  "trust_env": false
+}
+```
+
+该客户端兼容 OpenAI API 协议。切换模型服务时，需要同步验证模型名称、JSON 输出稳定性、上下文长度和计费策略。
+
+不要把真实 API Key 提交到 Git。部署时建议通过密钥管理服务或环境挂载配置文件。
+
+## 知识库准备
+
+完整检索需要以下两部分：
+
+1. `backend/qdrant_storage/`：Qdrant 本地集合，保存岗位知识向量与原始片段元数据。
+2. `backend/bge-m3/`：BGE-M3 模型目录，约 2.2 GB，不随 Git 仓库分发。
+
+从 Hugging Face 下载模型：
+
+```bash
+huggingface-cli download BAAI/bge-m3 --local-dir backend/bge-m3
+```
+
+国内网络可临时设置：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+缺少模型时后端仍可启动，但向量检索和资源来源质量会下降。不得把“接口可运行”当作“知识库已完整接入”。
+
+## 启动
+
+### 1. 启动后端
 
 ```bash
 cd backend
 python main.py
 ```
 
-启动后访问 `http://localhost:8000/docs` 查看 API 文档。
+- API 地址：`http://localhost:8000`
+- Swagger：`http://localhost:8000/docs`
 
-### 前端
+### 2. 启动前端
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-启动后访问 `http://localhost:5173`，登录后即可使用。
+- 页面地址：`http://localhost:5173`
+- Vite 默认将 `/api` 代理到 `http://localhost:8000`
+- 可用 `VITE_API_PROXY_TARGET` 指定其他后端地址
 
-> 默认注册的第一个账号即为可用账号，直接用任一用户名+密码注册即可。
+访问受保护页面前，需要先完成注册或登录。
+
+## 主要 API
+
+| 模块 | 接口 | 说明 |
+|---|---|---|
+| 认证 | `POST /api/auth/register` | 注册 |
+| 认证 | `POST /api/auth/login` | 登录并获取 Token |
+| 认证 | `GET /api/auth/me` | 当前用户 |
+| 岗位 | `GET /api/jobs/list` | 岗位能力模型列表 |
+| 资料 | `POST /api/material/upload` | 上传并解析资料 |
+| 资料 | `POST /api/material/text` | 保存文本证据 |
+| 评估 | `POST /api/assessment/create` | 创建评估 |
+| 评估 | `POST /api/assessment/review-input` | 审查输入充分性 |
+| 评估 | `POST /api/assessment/{id}/submit` | 执行诊断与资源生成 |
+| 评估 | `GET /api/assessment/{id}/progress` | 实时进度事件 |
+| 评估 | `GET /api/assessment/{id}/agents` | Agent 轨迹与检索来源 |
+| 校准 | `POST /api/assessment/{id}/calibrate` | 提交真实标注并校准 |
+| 资源 | `GET /api/resource/list` | 用户资源列表 |
+| 资源 | `GET /api/resource/search` | 搜索资源 |
+| 收藏 | `POST /api/resource/{id}/bookmark` | 收藏资源 |
+| 收藏 | `DELETE /api/resource/{id}/bookmark` | 取消收藏 |
+| 学习 | `POST /api/record/resource/{id}/start` | 开始或继续学习 |
+| 学习 | `PUT /api/record/{id}/complete` | 完成学习 |
+
+## 数据与证据链
+
+核心业务模型包括：
+
+- `User`
+- `Job`
+- `UserMaterial`
+- `Assessment`
+- `CalibrationRecord`
+- `LearningPath`
+- `Resource`
+- `ResourceBookmark`
+- `LearningRecord`
+- `Session`（学习会话）
+
+资源通过评估、能力缺口与知识库来源形成追溯关系：
+
+```text
+assessment_id
+  -> requirement_id / gap_id
+  -> source_chunk_id + source_text
+  -> generated resource
+  -> review_status + review_reason
+```
 
 ## 项目结构
 
-```
+```text
+PK-MACDM/
 ├── backend/
-│   ├── main.py                 # FastAPI 入口
-│   ├── config.py               # 配置
-│   ├── database.py             # 数据库连接
-│   ├── dimensions.py           # 能力维度定义
-│   ├── requirements.txt        # Python 依赖
-│   ├── llm_config.json         # ★ LLM 配置（API Key、模型地址）
-│   ├── capability_diagnosis.db # SQLite 数据库
-│   ├── bge-m3/                 # ★ BGE-M3 嵌入模型（需自行下载，不随仓库分发）
-│   ├── qdrant_storage/         # Qdrant 向量知识库（2,269 条，已随仓库分发）
-│   ├── models/                 # ORM 模型
-│   ├── routers/                # API 路由
-│   ├── adapters/               # 适配层
-│   │   ├── agent_adapter.py    # Agent 对外接口
-│   │   ├── agent_runtime.py    # Agent 运行时（串行 Agent 与真实结果校准）
-│   │   ├── llm_client.py       # LLM 客户端（OpenAI 兼容）
-│   │   ├── vector_adapter.py   # 向量检索适配（Qdrant + BGE-M3）
-│   │   └── guardrail.py        # 防幻觉校验（比对知识库原文）
-│   └── tests/                  # 测试脚本
-│
+│   ├── main.py
+│   ├── config.py
+│   ├── database.py
+│   ├── llm_config.json
+│   ├── adapters/
+│   │   ├── agent_adapter.py
+│   │   ├── agent_runtime.py
+│   │   ├── calibration.py
+│   │   ├── guardrail.py
+│   │   ├── llm_client.py
+│   │   └── vector_adapter.py
+│   ├── models/
+│   ├── prompts/
+│   ├── routers/
+│   ├── tests/
+│   ├── qdrant_storage/
+│   └── bge-m3/
 ├── frontend/
-│   └── src/
-│       ├── api/                # 后端接口封装
-│       ├── components/         # 公共组件
-│       ├── router/             # 路由配置
-│       ├── stores/             # Pinia 状态管理
-│       ├── styles/             # 主题样式
-│       └── views/              # 页面组件
-│
-└── README.md                   # 本文件
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── router/
+│   │   ├── stores/
+│   │   └── views/
+│   └── vite.config.ts
+├── GROUND_TRUTH_CALIBRATION.md
+└── README.md
 ```
 
-## AI Agent 流水线
+## 测试
 
-```
-用户自由文本
-  → 资料审查（AI 判断描述是否充分，不足则提示补充）
-  → 自由文本学情解析 Agent（LLM 语义理解 / 关键词匹配降级）
-  → 岗位知识库检索 Agent（Qdrant + BGE-M3 向量检索）
-  → 岗位能力诊断 Agent（生成 16 维能力向量 + 知识缺口）
-  → 诊断结果校正 Agent（校验字段、数值范围、文本充分度）
-  → 真实结果校准 Agent（对照客观题/实操/专家标注计算准确率，可选纠正）
-  → 防幻觉校验（DeepSeek 比对知识库原文）
-  → 个性化资源生成 Agent（基于检索片段生成讲义/练习/案例）
-  → 层2 资源校验（比对原文，标记 passed / partial / blocked）
-  → 个性化学习路径 Agent（按能力缺口规划 8 步学习路径）
-```
-
-多个 Agent 串行执行，每个 Agent 有独立身份（system prompt），LLM 不可用时自动降级为确定性规则引擎。真实结果校准 Agent 不使用模型置信度代替准确率：没有真实标注时状态为 `unvalidated`，只有接入可信的客观题、实操结果或专家标注后才计算准确率。
-
-准确率相关接口和数据格式详见 [`GROUND_TRUTH_CALIBRATION.md`](GROUND_TRUTH_CALIBRATION.md)。
-
-## 四个岗位能力模型
-
-| 岗位 | 技能数 | 核心维度 | 知识库片段 |
-|------|--------|---------|-----------|
-| 前端开发工程师 | 16 项 | 前端技术、编程基础 | 518 |
-| 后端开发工程师 | 16 项 | 编程基础、数据结构与算法、后端技术、数据库、系统设计 | 1,149 |
-| 运维工程师 | 16 项 | 计算机网络、操作系统、运维部署、安全规范 | 588 |
-| 产品经理 | 16 项 | 产品分析、项目管理、沟通表达、逻辑思维 | 14 |
-
-## 常见问题
-
-### 首次诊断等待很久
-
-首次提交诊断时 BGE-M3 模型（2.2GB）需要加载到内存，约 20~40 秒。加载后常驻内存，后续请求恢复正常速度。
-
-### "个性化学习"内容重复/模板化
-
-说明 LLM 未接入。检查 `backend/llm_config.json` 中的 `api_key` 是否已填写正确。
-
-### 端口被占用
-
-```bash
-# Windows 查看 8000 端口占用
-netstat -ano | findstr :8000
-# 记下 PID，然后杀掉
-taskkill -F -PID <PID>
-```
-
-### 后端启动报错 ModuleNotFoundError
-
-依赖未安装或版本过旧：
+后端：
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m pytest tests -q
 ```
 
-### 向量检索返回空
+前端：
 
-`backend/bge-m3/` 目录缺失（需自行下载，见第 3 节）；`backend/qdrant_storage/` 缺失或损坏则从队友处获取最新知识库文件。
+```bash
+cd frontend
+npm run build
+```
+
+当前自动化测试覆盖校准数据持久化、资源收藏、学习进度、评估删除清理和 Agent 进度事件。比赛指标仍需使用独立测试集、人工标注和真实学习者样本计算，不能只引用单元测试通过率。
+
+## 常见问题
+
+### 首次诊断较慢
+
+BGE-M3 首次加载通常需要 20 到 40 秒。模型加载后会常驻进程，后续检索会更快。DeepSeek 响应时间还受输入长度、资源数量和 API 并发限制影响。
+
+### 进度一直不变化
+
+确认前端和后端连接的是同一环境，并检查：
+
+- `/api/assessment/{id}/progress` 是否返回最新百分比
+- 后端是否采用多个 Worker
+- 负载均衡是否把请求分发到不同实例
+
+多实例部署应使用 Redis 共享进度状态。
+
+### 生成内容模板化
+
+检查 `backend/llm_config.json` 中的 API Key、模型名和服务地址。LLM 不可用时系统会进入规则降级模式。
+
+### 向量检索为空
+
+确认 BGE-M3 模型目录、Qdrant 存储目录和集合名称均正确，并检查向量维度是否与入库时一致。
+
+### 返回 401
+
+业务接口需要 `Authorization: Bearer <token>`。请重新登录并确认前端没有启用公开预览。
+
+## 安全说明
+
+- 不要提交真实 API Key、生产数据库、用户上传资料或 JWT 密钥。
+- 防幻觉校验不能替代人工专家审核，尤其是代码安全、运维安全和职业评价结论。
+- “准确率达到 90%”必须由有真实标签的独立测试集验证，不能由模型自报置信度得出。
+- 对外部署前应增加 HTTPS、限流、日志脱敏、备份、上传文件校验和 Redis 共享任务状态。
